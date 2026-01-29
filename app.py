@@ -146,11 +146,44 @@ def main():
     # ==========================================
     with st.sidebar:
         st.header("🎮 控制台")
-        mode = st.radio("选择模式", ["📡 实时监控", "💾 收盘存证", "⚖️ 晚间审计"])
+        # 🔥 新增了 "💰 持仓管理" 选项
+        mode = st.radio("选择模式", ["📡 实时监控", "💰 持仓管理", "💾 收盘存证", "⚖️ 晚间审计"])
         st.divider()
 
+        # --- 💰 模式 New: 持仓管理 (手机端改金额) ---
+        if mode == "💰 持仓管理":
+            st.info("📝 在这里修改持仓金额，点击保存后即刻生效。")
+            
+            with st.form("holding_form"):
+                new_holdings = {}
+                for name, info in funds_config.items():
+                    # 显示输入框，默认值是当前的持仓
+                    current_val = info.get('holding_value', 0)
+                    new_val = st.number_input(
+                        label=name.split('(')[0], # 只显示简名
+                        value=float(current_val),
+                        step=100.0,
+                        format="%.2f"
+                    )
+                    new_holdings[name] = new_val
+                
+                # 提交按钮
+                if st.form_submit_button("💾 保存新持仓到云端"):
+                    try:
+                        # 更新本地配置对象
+                        for name, val in new_holdings.items():
+                            funds_config[name]['holding_value'] = val
+                        
+                        # 写入 GitHub
+                        save_json('funds.json', funds_config, config_sha, "Update Holdings via App")
+                        st.success("🎉 修改成功！金额已更新。")
+                        time.sleep(1)
+                        st.rerun()
+                    except Exception as e:
+                        st.error(f"保存失败: {e}")
+
         # --- 💾 模式 B: 收盘存证 ---
-        if mode == "💾 收盘存证":
+        elif mode == "💾 收盘存证":
             st.info("ℹ️ 最佳操作时间：收盘后 (15:00 - 23:59)。")
             if st.button("📸 立即存证"):
                 with st.spinner("正在计算(经典单因子)..."):
@@ -172,7 +205,6 @@ def main():
                                     val += prices[s['code']]['change'] * s['weight']
                                     w += s['weight']
                             
-                            # V4 逻辑：只记录纯持仓涨跌
                             raw_est = val / w if w > 0 else 0
                             snapshot_data[name] = raw_est
                         
@@ -289,17 +321,14 @@ def main():
                 bj_time = datetime.utcnow() + timedelta(hours=8)
                 st.caption(f"最后刷新: {bj_time.strftime('%H:%M:%S')}")
                 
-                # --- 🔥 新增：家庭账户总看板 ---
+                # --- 家庭账户总看板 ---
                 total_daily_profit = 0
                 total_principal = 0
-                
-                # 预计算一轮，为了得出总盈亏
-                fund_results = [] # 暂存计算结果
+                fund_results = []
                 
                 for fund_name, fund_info in funds_config.items():
                     holdings = fund_info['holdings']
                     factor = fund_info.get('factor', 1.0)
-                    # 获取持仓金额 (如果没有配，默认为0)
                     principal = fund_info.get('holding_value', 0)
                     
                     total_val = 0
@@ -317,9 +346,7 @@ def main():
                     raw_est = total_val / total_w if total_w > 0 else 0
                     final_est = raw_est * factor
                     
-                    # 计算单只基金盈亏
                     profit = principal * (final_est / 100)
-                    
                     total_daily_profit += profit
                     total_principal += principal
                     
@@ -332,14 +359,9 @@ def main():
                         "principal": principal
                     })
 
-                # 渲染总盈亏看板
+                # 渲染看板
                 st.header("💰 家庭今日盈亏")
                 col_main1, col_main2 = st.columns(2)
-                
-                # 颜色逻辑
-                p_color = "normal"
-                if total_daily_profit > 0: p_color = "off" # Streamlit metric delta 自动绿色
-                if total_daily_profit < 0: p_color = "inverse" # 红色
                 
                 col_main1.metric(
                     label="今日预估盈亏 (元)",
@@ -347,7 +369,6 @@ def main():
                     delta=f"{total_daily_profit:+.2f} 元"
                 )
                 
-                # 简单的收益率计算
                 total_yield = (total_daily_profit / total_principal * 100) if total_principal > 0 else 0
                 col_main2.metric(
                     label="整体收益率",
@@ -364,9 +385,8 @@ def main():
                     if info: cols[i].metric(MARKET_INDICES[code], f"{info['change']:.2f}%")
                 st.divider()
 
-                # --- 基金卡片 (带盈亏) ---
+                # --- 基金卡片 ---
                 for res in fund_results:
-                    # 标题优化：显示 基金名 | +1.25% | +125.0元
                     emoji = "🔥" if res['est'] > 0 else "❄️"
                     color = "red" if res['est'] > 0 else "green"
                     
