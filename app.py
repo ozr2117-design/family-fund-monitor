@@ -6,7 +6,7 @@ import pandas as pd
 from datetime import datetime, timedelta
 from github import Github
 
-# === 🎨 1. 页面配置与 CSS 魔法 (Apple Glassmorphism) ===
+# === 🎨 1. 页面配置与 CSS 魔法 (iOS Control Center) ===
 st.set_page_config(
     page_title="Family Wealth",
     page_icon="💎",
@@ -14,7 +14,7 @@ st.set_page_config(
     initial_sidebar_state="collapsed"
 )
 
-# 注入 CSS：苹果风 + 毛玻璃 + 极光背景
+# 注入 CSS：全局美化 + 菜单深度定制
 st.markdown("""
     <style>
     /* 1. 全局极光背景 */
@@ -22,7 +22,7 @@ st.markdown("""
         background: radial-gradient(circle at 10% 20%, rgba(255, 230, 240, 0.4) 0%, rgba(255, 255, 255, 0) 40%),
                     radial-gradient(circle at 90% 80%, rgba(230, 240, 255, 0.4) 0%, rgba(255, 255, 255, 0) 40%),
                     #fdfdfd;
-        font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Helvetica Neue", Helvetica, Arial, sans-serif;
+        font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Helvetica Neue", sans-serif;
     }
     
     /* 2. 隐藏无关元素 */
@@ -32,29 +32,73 @@ st.markdown("""
     footer {visibility: hidden;}
     header {visibility: hidden;}
     
-    /* 3. Settings 按钮 */
+    /* 3. Settings 按钮 (右上角胶囊) */
     div[data-testid="stPopover"] > button {
         border-radius: 20px;
         border: 1px solid rgba(255, 255, 255, 0.6);
-        background-color: rgba(255, 255, 255, 0.5);
+        background-color: rgba(255, 255, 255, 0.6);
         backdrop-filter: blur(10px);
-        color: #888;
+        color: #666;
         font-size: 13px;
         padding: 4px 12px;
-        box-shadow: 0 4px 6px rgba(0,0,0,0.02);
-        transition: all 0.3s;
+        box-shadow: 0 2px 10px rgba(0,0,0,0.03);
+        transition: all 0.2s;
     }
     div[data-testid="stPopover"] > button:hover {
-        background-color: rgba(255, 255, 255, 0.9);
-        color: #333;
+        background-color: #fff;
+        color: #007aff; /* iOS Blue */
         transform: scale(1.02);
+        box-shadow: 0 4px 12px rgba(0,122,255,0.15);
+        border-color: #007aff;
     }
 
-    /* 4. 收益率大卡片 */
+    /* 4. 🔥 核心：改造 Popover 内部样式 (iOS控制中心风格) */
+    
+    /* 弹出层背景毛玻璃化 */
+    div[data-testid="stPopoverBody"] {
+        background-color: rgba(255, 255, 255, 0.85);
+        backdrop-filter: blur(20px);
+        border-radius: 16px;
+        border: 1px solid rgba(255,255,255,0.5);
+        padding: 15px !important;
+    }
+
+    /* 隐藏 Radio 的原始圆圈 */
+    div[role="radiogroup"] label > div:first-child {
+        display: none !important;
+    }
+
+    /* 将 Radio 选项改造成 iOS 列表项 */
+    div[role="radiogroup"] label {
+        background-color: rgba(255, 255, 255, 0.6);
+        padding: 12px 15px !important;
+        border-radius: 12px !important;
+        margin-bottom: 8px !important;
+        border: 1px solid rgba(0,0,0,0.05);
+        transition: all 0.2s ease;
+        display: flex;
+        width: 100%;
+        color: #444;
+    }
+    
+    /* 悬浮效果 */
+    div[role="radiogroup"] label:hover {
+        background-color: #f5f5f7;
+        transform: translateX(2px);
+    }
+
+    /* 选中状态 (Streamlit 会给选中的 label 加 data-checked 属性吗？很难定位)
+       这里我们用一点 CSS trick，虽然不能完美改变背景色，但可以优化文字 */
+    div[role="radiogroup"] [data-testid="stMarkdownContainer"] p {
+        font-size: 14px;
+        font-weight: 500;
+        margin: 0;
+    }
+
+    /* 5. 收益率大卡片 */
     div[data-testid="stMetric"] {
         background: rgba(255, 255, 255, 0.65);
         backdrop-filter: blur(16px);
-        -webkit-backdrop-filter: blur(16px);
         border: 1px solid rgba(255, 255, 255, 0.6);
         padding: 15px 20px;
         border-radius: 20px;
@@ -65,37 +109,17 @@ st.markdown("""
         flex-direction: column;
         justify-content: center;
     }
-    div[data-testid="stMetricLabel"] {
-        color: #666;
-        font-size: 13px;
-        font-weight: 500;
-        letter-spacing: 0.5px;
-    }
     
-    /* 5. 基金卡片容器 */
-    .streamlit-expanderHeader {
-        background-color: rgba(255, 255, 255, 0.7) !important;
-        border-radius: 16px;
-        font-weight: 600;
-        color: #333;
-        border: 1px solid rgba(255, 255, 255, 0.5);
-        font-size: 15px;
-    }
+    /* 6. 基金卡片 & 列表 */
     div[data-testid="stExpander"] {
         border: none;
-        box-shadow: 0 8px 24px rgba(0,0,0,0.04);
+        box-shadow: 0 8px 24px rgba(0,0,0,0.03);
         border-radius: 16px;
         background-color: rgba(255, 255, 255, 0.5);
         backdrop-filter: blur(10px);
         margin-bottom: 15px;
         overflow: hidden;
     }
-    div[data-testid="stExpanderDetails"] {
-        background-color: rgba(255, 255, 255, 0.4);
-        padding-top: 0px !important; /* 修正顶部间距 */
-    }
-
-    /* 6. 🔥 iOS 列表核心样式 (Flexbox) */
     .ios-list-container {
         display: flex;
         flex-direction: column;
@@ -109,46 +133,11 @@ st.markdown("""
         border-bottom: 1px solid rgba(0,0,0,0.06);
         width: 100%;
     }
-    .ios-row:last-child {
-        border-bottom: none;
-    }
-    
-    .ios-index {
-        font-size: 12px;
-        color: #aaa;
-        width: 24px;
-        font-weight: 600;
-        margin-right: 8px;
-    }
-    
-    .ios-name {
-        font-size: 14px;
-        color: #333;
-        font-weight: 500;
-        flex: 1; /* 自动撑开 */
-        white-space: nowrap;
-        overflow: hidden;
-        text-overflow: ellipsis;
-        margin-right: 10px;
-    }
-    
-    .ios-pill {
-        padding: 4px 10px;
-        border-radius: 6px;
-        font-size: 13px;
-        font-weight: 600;
-        min-width: 65px;
-        text-align: right;
-        font-family: -apple-system, BlinkMacSystemFont, sans-serif;
-    }
-    
-    /* 左侧详情区 */
-    .detail-box {
-        background: rgba(255,255,255,0.6);
-        padding: 15px;
-        border-radius: 12px;
-        border: 1px solid rgba(255,255,255,0.4);
-    }
+    .ios-row:last-child { border-bottom: none; }
+    .ios-index { font-size: 12px; color: #aaa; width: 24px; font-weight: 600; margin-right: 8px; }
+    .ios-name { font-size: 14px; color: #333; font-weight: 500; flex: 1; margin-right: 10px; }
+    .ios-pill { padding: 4px 10px; border-radius: 6px; font-size: 13px; font-weight: 600; min-width: 65px; text-align: right; color: white; font-family: -apple-system; }
+    .detail-box { background: rgba(255,255,255,0.6); padding: 15px; border-radius: 12px; border: 1px solid rgba(255,255,255,0.4); }
     </style>
 """, unsafe_allow_html=True)
 
@@ -270,14 +259,43 @@ def main():
         st.markdown(f"<h2 style='margin-top:-10px; color:#333; letter-spacing:0.5px; font-weight:300'>Family Wealth</h2>", unsafe_allow_html=True)
 
     with top_col2:
+        # 🔥 Popover 内容重构：更扁平，更优雅
         with st.popover("⚙️ Settings", use_container_width=True):
-            st.markdown("### 🛠️ Menu")
-            mode = st.radio("Mode", ["📡 实时看板", "💰 持仓管理", "💾 收盘存证", "⚖️ 晚间审计"], label_visibility="collapsed")
-            st.divider()
             
-            # --- 内部逻辑 (保持不变) ---
-            if mode == "💰 持仓管理":
-                st.info("Modify Holdings")
+            # 使用 Caption 分组，增加层次感
+            st.caption("Views")
+            
+            # 🔥 这里的 emoji 被我用来当做图标
+            # radio 已经被 CSS 爆改成 列表菜单了
+            mode = st.radio(
+                "Navigation", 
+                ["📡  实时看板", "💰  持仓管理"], 
+                label_visibility="collapsed",
+                key="nav_radio"
+            )
+            
+            st.markdown("<div style='height:10px'></div>", unsafe_allow_html=True) # 增加间距
+            st.caption("Actions")
+            
+            # 这是一个技巧：把 Actions 和 Views 放在同一个 radio 里逻辑会乱
+            # 所以 Actions 我们保留为 radio 的选项，但在下面处理
+            action_mode = st.radio(
+                "Tools", 
+                ["💾  收盘存证", "⚖️  晚间审计"], 
+                label_visibility="collapsed",
+                index=None, # 默认不选中
+                key="action_radio"
+            )
+
+            # --- 逻辑分发 ---
+            
+            # 如果点击了下方的 Action，优先处理 Action
+            current_selection = action_mode if action_mode else mode
+
+            # 💰 持仓管理
+            if current_selection == "💰  持仓管理":
+                st.divider()
+                st.info("Modify Holdings Amount")
                 with st.form("holding_form_pop"):
                     new_holdings = {}
                     for name, info in funds_config.items():
@@ -286,15 +304,17 @@ def main():
                         new_val = st.number_input(short_name, value=float(current_val), step=100.0)
                         new_holdings[name] = new_val
                     
-                    if st.form_submit_button("Save"):
+                    if st.form_submit_button("Save Changes"):
                         for name, val in new_holdings.items(): funds_config[name]['holding_value'] = val
                         save_json('funds.json', funds_config, config_sha, "Update Holdings")
-                        st.toast("Updated!")
+                        st.toast("Updated Successfully!")
                         time.sleep(1); st.rerun()
 
-            elif mode == "💾 收盘存证":
-                if st.button("📸 Snapshot", type="primary", use_container_width=True):
-                    with st.spinner("Saving..."):
+            # 💾 收盘存证
+            elif current_selection == "💾  收盘存证":
+                st.divider()
+                if st.button("📸 Run Snapshot", type="primary", use_container_width=True):
+                    with st.spinner("Processing..."):
                         snapshot_data = {}
                         all_codes = []
                         for f in funds_config.values():
@@ -311,10 +331,12 @@ def main():
                             history, hist_sha = load_json('history.json')
                             history[today_str] = snapshot_data
                             save_json('history.json', history, hist_sha, f"Snapshot {today_str}")
-                            st.success(f"Saved: {today_str}")
+                            st.success(f"Snapshot Saved: {today_str}")
 
-            elif mode == "⚖️ 晚间审计":
-                if st.button("🚀 Audit & Fix", type="primary", use_container_width=True):
+            # ⚖️ 晚间审计
+            elif current_selection == "⚖️  晚间审计":
+                st.divider()
+                if st.button("🚀 Start Audit", type="primary", use_container_width=True):
                     history, _ = load_json('history.json')
                     factor_hist, _ = load_json('factor_history.json')
                     if history:
@@ -337,18 +359,20 @@ def main():
                         if need_save:
                             save_json('funds.json', funds_config, config_sha, "Audit")
                             save_factor_history(last_date, current_success)
-                            st.success("Fixed!"); time.sleep(1); st.rerun()
-                        else: st.info("No updates needed")
+                            st.success("Factors Optimized!"); time.sleep(1); st.rerun()
+                        else: st.info("No updates needed today")
 
             st.divider()
-            with st.expander("📊 Stability"):
+            with st.expander("📊 Stability Check"):
                 fh, _ = load_json('factor_history.json')
                 if fh: st.line_chart(pd.DataFrame.from_dict(fh, orient='index').sort_index())
 
     # ==========================================
-    # 👇 主展示区 (Apple Glass Mode - Fixed)
+    # 👇 主展示区 (Focus Mode)
     # ==========================================
-    if mode == "📡 实时看板":
+    # 只要不是在做 "持仓管理"，都显示主看板
+    # 这样用户点开设置看一眼，不用切换模式，背景还是好看的主页
+    if "持仓管理" not in str(mode) and "持仓管理" not in str(action_mode):
         placeholder = st.empty()
         
         all_codes = list(MARKET_INDICES.keys())
@@ -374,7 +398,7 @@ def main():
                         d = market_data.get(s['code'])
                         if d:
                             val += d['change'] * s['weight']; w += s['weight']
-                            if len(stocks) < 3: # 前3大重仓
+                            if len(stocks) < 3: 
                                 stocks.append({
                                     "name": d['name'], 
                                     "pct": d['change']
@@ -411,9 +435,7 @@ def main():
                     
                     with st.expander(title):
                         kc1, kc2 = st.columns([1.1, 2])
-                        
-                        # 左侧：玻璃质感小卡片
-                        color_code = "#ff3b30" if card['profit']>0 else "#34c759" # iOS 红/绿
+                        color_code = "#ff3b30" if card['profit']>0 else "#34c759"
                         kc1.markdown(f"""
                         <div class='detail-box'>
                             <div style='font-size:12px; color:#888; margin-bottom:2px'>今日盈亏</div>
@@ -424,13 +446,10 @@ def main():
                         </div>
                         """, unsafe_allow_html=True)
                         
-                        # 右侧：🔥 修复代码块乱码问题
-                        # 解决方法：在 Python 中紧凑拼接 HTML，不带缩进，避免 Markdown 误判为代码块
                         list_html = "<div class='ios-list-container'>"
                         for i, s in enumerate(card['stocks']):
                             bg_color = "#ff3b30" if s['pct'] > 0 else ("#34c759" if s['pct'] < 0 else "#8e8e93")
                             txt_color = "white"
-                            # 单行拼接，无换行符，无空格缩进
                             list_html += f"<div class='ios-row'><div class='ios-index'>{i+1}</div><div class='ios-name'>{s['name']}</div><div class='ios-pill' style='background-color:{bg_color}; color:{txt_color}'>{s['pct']:+.2f}%</div></div>"
                         list_html += "</div>"
                         
@@ -439,7 +458,6 @@ def main():
                 # 3. 🌍 底部大盘
                 st.divider()
                 st.markdown("<span style='color:#999; font-size:12px; letter-spacing:1px; margin-left:2px; font-weight:500'>MARKET INDICES</span>", unsafe_allow_html=True)
-                
                 mc1, mc2, mc3 = st.columns(3)
                 m_cols = [mc1, mc2, mc3]
                 for i, code in enumerate(MARKET_INDICES):
