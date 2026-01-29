@@ -101,22 +101,55 @@ def get_realtime_price(stock_codes):
 def main():
     st.title("🦅 全域鹰眼监控 Pro+")
     
-    # 👇👇👇 【在这里粘贴】 👇👇👇
-    # 把它放在 main() 的一开始，placeholder 之前，while True 之前！
-    
+    # 👇👇👇 【把这一大段直接覆盖原来的 sidebar 代码】 👇👇👇
     with st.sidebar:
-        st.header("🛠️ 晚间校准")
+        st.header("🛠️ 晚间数据校准")  # 1. 改名成功
         
         # 1. 选择要校准的基金
         fund_list = list(MY_FUNDS_CONFIG.keys())
         selected_fund = st.selectbox("选择基金", fund_list)
         
+        # === 🤖 自动获取算法估值 (新增逻辑) ===
+        # 原理：既然要校准，就现场拉取一次最新数据算一遍
+        current_fund_info = MY_FUNDS_CONFIG[selected_fund]
+        current_holdings = current_fund_info['holdings']
+        
+        # 提取该基金的所有股票代码
+        target_codes = [s['code'] for s in current_holdings]
+        
+        # 调用行情接口 (只查这几只，速度很快)
+        sidebar_data = get_realtime_price(target_codes)
+        
+        auto_est_val = 0.0
+        if sidebar_data:
+            total_w_change = 0
+            total_w = 0
+            for s in current_holdings:
+                info = sidebar_data.get(s['code'])
+                if info:
+                    total_w_change += info['change'] * s['weight']
+                    total_w += s['weight']
+            
+            if total_w > 0:
+                # 算出当前的估值 (自动带入当前系数)
+                auto_est_val = (total_w_change / total_w) * current_fund_info['factor']
+        # ========================================
+
         # 2. 输入数据
         st.caption("请对照支付宝/天天基金今晚的净值")
-        official_pct = st.number_input(f"【B】官方实际涨跌 (%)", value=0.0, step=0.01, format="%.2f")
-        est_pct = st.number_input(f"【A】算法刚才算的估值 (%)", value=0.0, step=0.01, format="%.2f")
         
-        # 3. 计算逻辑
+        # 【B】官方净值：这个必须手动填，因为这是“标准答案”
+        official_pct = st.number_input(f"【B】官方实际涨跌 (%)", value=0.0, step=0.01, format="%.2f")
+        
+        # 【A】算法估值：默认值(value)设为刚才自动算出来的 auto_est_val
+        est_pct = st.number_input(
+            f"【A】算法自动估值 (%)", 
+            value=float(auto_est_val),  # 👈 这里实现了自动填充
+            step=0.01, 
+            format="%.2f"
+        )
+        
+        # 3. 计算逻辑 (保持不变)
         if st.button("计算新系数"):
             if est_pct == 0:
                 st.error("算法估值不能为0")
@@ -125,23 +158,25 @@ def main():
                 # 还原原始估值
                 raw_est = est_pct / current_factor 
                 
-                # 计算完美系数
-                perfect_factor = official_pct / raw_est
-                
-                # EMA 平滑处理 (90%旧 + 10%新)
-                new_factor = (current_factor * 0.9) + (perfect_factor * 0.1)
-                
-                st.divider()
-                st.markdown(f"**当前系数:** `{current_factor:.2f}`")
-                st.markdown(f"**建议系数:** `{new_factor:.2f}`")
-                
-                diff = official_pct - est_pct
-                if abs(diff) < 0.2:
-                    st.success("✅ 误差极小，无需修改！")
+                if raw_est != 0:
+                    # 计算完美系数
+                    perfect_factor = official_pct / raw_est
+                    
+                    # EMA 平滑处理 (90%旧 + 10%新)
+                    new_factor = (current_factor * 0.9) + (perfect_factor * 0.1)
+                    
+                    st.divider()
+                    st.markdown(f"**当前系数:** `{current_factor:.2f}`")
+                    st.markdown(f"**建议系数:** `{new_factor:.2f}`")
+                    
+                    diff = official_pct - est_pct
+                    if abs(diff) < 0.2:
+                        st.success("✅ 误差极小，无需修改！")
+                    else:
+                        st.error(f"⚠️ 建议去代码里把 factor 改为 {new_factor:.2f}")
                 else:
-                    st.error(f"⚠️ 建议去代码里把 factor 改为 {new_factor:.2f}")
-
-    # 👆👆👆 【粘贴结束】 👆👆👆
+                    st.error("原始数据异常，无法计算")
+    # 👆👆👆 【替换结束】 👆👆👆
     
     placeholder = st.empty()
     
@@ -228,5 +263,6 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
 
