@@ -1,16 +1,16 @@
 import streamlit as st
 import requests
 import time
-from datetime import datetime, timedelta # 👈 新增 timedelta
+from datetime import datetime, timedelta
 
-# === ⚙️ 配置区域 ===
+# === ⚙️ 基础配置 ===
 st.set_page_config(
-    page_title="全域鹰眼监控",
+    page_title="全域鹰眼监控 Pro+",
     page_icon="🦅",
     layout="centered"
 )
 
-# === 🔥 核心配置 ===
+# === 🔥 核心基金配置 (包含系数与持仓) ===
 MY_FUNDS_CONFIG = {
     '摩根均衡C (梁鹏/周期)': {
         'factor': 0.83, 
@@ -43,7 +43,7 @@ MY_FUNDS_CONFIG = {
         ]
     },
     '财通优选C (金梓才/AI)': {
-        'factor': 0.89,
+        'factor': 1.00, # 👈 建议根据今晚情况修正这里
         'holdings': [
             {'code': 'sz300502', 'name': '新 易 盛', 'weight': 9.69},
             {'code': 'sz301377', 'name': '鼎泰高科', 'weight': 9.64},
@@ -65,13 +65,18 @@ MARKET_INDICES = {
     'hkHSTECH': '恒生科技'
 }
 
-# === 函数区域 ===
+# === 🛠️ 工具函数 ===
 def get_realtime_price(stock_codes):
-    """腾讯接口获取行情"""
+    """从腾讯接口获取实时行情"""
+    if not stock_codes:
+        return {}
+        
     codes_str = ",".join(stock_codes)
     url = f"http://qt.gtimg.cn/q={codes_str}"
+    
     try:
-        r = requests.get(url, timeout=3)
+        # 设置超时，防止卡死
+        r = requests.get(url, timeout=2)
         text = r.text
     except:
         return None
@@ -85,8 +90,7 @@ def get_realtime_price(stock_codes):
                 code = key_raw.split('_')[-1] 
                 data = part.split('="')[1].strip('"').split('~')
                 if len(data) > 30:
-                    name = data[1]
-                    name = name.replace(" ", "")
+                    name = data[1].replace(" ", "")
                     current = float(data[3])
                     close = float(data[4])
                     pct = 0.0
@@ -97,26 +101,26 @@ def get_realtime_price(stock_codes):
                 continue
     return price_data
 
-# === 主程序 ===
+# === 🚀 主程序 ===
 def main():
     st.title("🦅 全域鹰眼监控 Pro+")
-    # 👇👇👇 【把这一大段直接覆盖原来的 sidebar 代码】 👇👇👇
+
+    # ==========================================
+    # 👇 侧边栏：晚间数据校准 (全自动获取版)
+    # ==========================================
     with st.sidebar:
-        st.header("🛠️ 晚间数据校准")  # 1. 改名成功
+        st.header("🛠️ 晚间数据校准")
         
         # 1. 选择要校准的基金
         fund_list = list(MY_FUNDS_CONFIG.keys())
         selected_fund = st.selectbox("选择基金", fund_list)
         
-        # === 🤖 自动获取算法估值 (新增逻辑) ===
-        # 原理：既然要校准，就现场拉取一次最新数据算一遍
+        # --- 自动获取当前估值逻辑 ---
         current_fund_info = MY_FUNDS_CONFIG[selected_fund]
         current_holdings = current_fund_info['holdings']
         
-        # 提取该基金的所有股票代码
+        # 提取代码并请求接口
         target_codes = [s['code'] for s in current_holdings]
-        
-        # 调用行情接口 (只查这几只，速度很快)
         sidebar_data = get_realtime_price(target_codes)
         
         auto_est_val = 0.0
@@ -130,31 +134,30 @@ def main():
                     total_w += s['weight']
             
             if total_w > 0:
-                # 算出当前的估值 (自动带入当前系数)
+                # 算出当前的估值 (原始估值 * 当前系数)
                 auto_est_val = (total_w_change / total_w) * current_fund_info['factor']
-        # ========================================
-
-        # 2. 输入数据
+        
+        # 2. 输入数据区
         st.caption("请对照支付宝/天天基金今晚的净值")
         
-        # 【B】官方净值：这个必须手动填，因为这是“标准答案”
+        # 【B】官方净值 (手动填)
         official_pct = st.number_input(f"【B】官方实际涨跌 (%)", value=0.0, step=0.01, format="%.2f")
         
-        # 【A】算法估值：默认值(value)设为刚才自动算出来的 auto_est_val
+        # 【A】算法估值 (自动填)
         est_pct = st.number_input(
             f"【A】算法自动估值 (%)", 
-            value=float(auto_est_val),  # 👈 这里实现了自动填充
+            value=float(auto_est_val), 
             step=0.01, 
             format="%.2f"
         )
         
-        # 3. 计算逻辑 (保持不变)
+        # 3. 计算按钮
         if st.button("计算新系数"):
             if est_pct == 0:
                 st.error("算法估值不能为0")
             else:
                 current_factor = MY_FUNDS_CONFIG[selected_fund]['factor']
-                # 还原原始估值
+                # 还原出不带系数的原始估值
                 raw_est = est_pct / current_factor 
                 
                 if raw_est != 0:
@@ -174,11 +177,14 @@ def main():
                     else:
                         st.error(f"⚠️ 建议去代码里把 factor 改为 {new_factor:.2f}")
                 else:
-                    st.error("原始数据异常，无法计算")
-    # 👆👆👆 【替换结束】 👆👆👆
+                    st.error("数据异常，无法计算")
     
-    placeholder = st.empty()
+    # ==========================================
+    # 👇 主界面：实时监控 (30秒刷新)
+    # ==========================================
+    placeholder = st.empty() # 创建占位容器
     
+    # 提取所有需要监控的代码
     all_codes = list(MARKET_INDICES.keys())
     for fund_data in MY_FUNDS_CONFIG.values():
         for stock in fund_data['holdings']:
@@ -187,23 +193,22 @@ def main():
 
     while True:
         with placeholder.container():
+            # 获取所有数据
             market_data = get_realtime_price(all_codes)
             
             if not market_data:
-                st.warning("正在连接数据源...")
+                st.warning("正在连接行情接口...")
                 time.sleep(2)
                 continue
             
-            # 🔥【修正点】UTC时间 + 8小时 = 北京时间
+            # 显示时间 (北京时间)
             bj_time = datetime.utcnow() + timedelta(hours=8)
             current_time = bj_time.strftime('%H:%M:%S')
-            
             st.caption(f"最后刷新: {current_time} (北京时间 | 30秒自动刷新)")
             
             # 1. 大盘看板
             st.subheader("📈 市场风向")
             col1, col2, col3 = st.columns(3)
-            
             indices_keys = list(MARKET_INDICES.keys())
             cols = [col1, col2, col3]
             
@@ -236,7 +241,7 @@ def main():
                     color = "red" if corrected_est > 0 else "green"
                     emoji = "🔥" if corrected_est > 0 else "❄️"
                     
-                    # 🔥【智能展开逻辑】波动 > 1.5% 自动展开
+                    # 波动超过 1.5% 自动展开
                     is_expanded = abs(corrected_est) > 1.5
                     
                     with st.expander(f"{emoji} {fund_name.split('(')[0]}  |  {corrected_est:+.2f}%", expanded=is_expanded):
@@ -247,7 +252,7 @@ def main():
                         elif corrected_est < -2.0:
                             st.success("💡 提示：黄金坑，考虑补仓")
                             
-                        # 显示持仓前五
+                        # 显示前5大持仓
                         top_stocks = []
                         for s in holdings[:5]:
                             s_info = market_data.get(s['code'])
@@ -258,11 +263,8 @@ def main():
                                 })
                         st.table(top_stocks)
 
+        # 30秒循环间隔
         time.sleep(30)
 
 if __name__ == "__main__":
     main()
-
-
-
-
