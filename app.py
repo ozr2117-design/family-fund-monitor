@@ -6,7 +6,7 @@ import pandas as pd
 from datetime import datetime, timedelta
 from github import Github
 
-# === 🎨 1. 页面配置与 CSS 魔法 (V4.2 修复版) ===
+# === 🎨 1. 页面配置与 CSS 魔法 (Apple Glassmorphism) ===
 st.set_page_config(
     page_title="Family Wealth",
     page_icon="💎",
@@ -14,13 +14,15 @@ st.set_page_config(
     initial_sidebar_state="collapsed"
 )
 
-# 注入 CSS
+# 注入 CSS：苹果风 + 毛玻璃 + 极光背景
 st.markdown("""
     <style>
-    /* 1. 全局样式 */
+    /* 1. 全局极光背景 (让毛玻璃显形的背景) */
     .stApp {
-        font-family: -apple-system, BlinkMacSystemFont, "Helvetica Neue", Helvetica, Arial, sans-serif;
-        background-color: #fcfcfc; 
+        background: radial-gradient(circle at 10% 20%, rgba(255, 230, 240, 0.4) 0%, rgba(255, 255, 255, 0) 40%),
+                    radial-gradient(circle at 90% 80%, rgba(230, 240, 255, 0.4) 0%, rgba(255, 255, 255, 0) 40%),
+                    #fdfdfd; /* 兜底白色 */
+        font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Helvetica Neue", Helvetica, Arial, sans-serif;
     }
     
     /* 2. 隐藏无关元素 */
@@ -30,86 +32,116 @@ st.markdown("""
     footer {visibility: hidden;}
     header {visibility: hidden;}
     
-    /* 3. Settings 按钮 */
+    /* 3. Settings 按钮 (胶囊风) */
     div[data-testid="stPopover"] > button {
         border-radius: 20px;
-        border: 1px solid #f0f0f0;
-        background-color: white;
-        color: #999;
+        border: 1px solid rgba(255, 255, 255, 0.6);
+        background-color: rgba(255, 255, 255, 0.5);
+        backdrop-filter: blur(10px); /* 毛玻璃 */
+        color: #888;
         font-size: 13px;
         padding: 4px 12px;
+        box-shadow: 0 4px 6px rgba(0,0,0,0.02);
         transition: all 0.3s;
     }
     div[data-testid="stPopover"] > button:hover {
-        border-color: #ffd700;
-        color: #b8860b;
+        background-color: rgba(255, 255, 255, 0.9);
+        color: #333;
+        transform: scale(1.02);
     }
 
-    /* 4. 🔥 核心修复：收益率框框强制等高 */
+    /* 4. 收益率大卡片 (毛玻璃化) */
     div[data-testid="stMetric"] {
-        background-color: #ffffff;
-        border: 1px solid #f8f8f8;
+        background: rgba(255, 255, 255, 0.65); /* 半透明白 */
+        backdrop-filter: blur(16px);            /* 强模糊 */
+        -webkit-backdrop-filter: blur(16px);
+        border: 1px solid rgba(255, 255, 255, 0.6); /* 玻璃边框 */
         padding: 15px 20px;
-        border-radius: 12px;
-        box-shadow: 0 8px 20px rgba(0,0,0,0.04);
-        /* 强制高度一致，并垂直居中 */
+        border-radius: 20px; /* 更大的圆角 */
+        box-shadow: 0 8px 32px rgba(31, 38, 135, 0.05); /* 柔光投影 */
         min-height: 115px !important; 
         max-height: 115px !important;
         display: flex;
         flex-direction: column;
         justify-content: center;
     }
-    
     div[data-testid="stMetricLabel"] {
-        color: #888;
-        font-size: 14px;
-        margin-bottom: 5px; /* 标签和数字拉开一点距离 */
+        color: #666;
+        font-size: 13px;
+        font-weight: 500;
+        letter-spacing: 0.5px;
     }
     
-    /* 5. 基金详情卡片 */
+    /* 5. 基金卡片容器 (Expander) */
     .streamlit-expanderHeader {
-        background-color: #fff;
-        border-radius: 12px;
-        font-weight: 500;
+        background-color: rgba(255, 255, 255, 0.7) !important;
+        border-radius: 16px;
+        font-weight: 600;
         color: #333;
-        border: 1px solid #f2f2f2;
+        border: 1px solid rgba(255, 255, 255, 0.5);
         font-size: 15px;
     }
     div[data-testid="stExpander"] {
         border: none;
-        box-shadow: 0 4px 12px rgba(0,0,0,0.03);
-        border-radius: 12px;
-        background-color: white;
-        margin-bottom: 12px;
+        box-shadow: 0 8px 24px rgba(0,0,0,0.04);
+        border-radius: 16px;
+        background-color: rgba(255, 255, 255, 0.5); /* 容器本身也半透明 */
+        backdrop-filter: blur(10px);
+        margin-bottom: 15px;
+        overflow: hidden; /* 防止内容溢出圆角 */
     }
-    
-    /* 6. 股票列表样式 (HTML Table) */
-    .stock-table {
-        width: 100%;
-        border-collapse: collapse;
-        font-size: 13px;
-        color: #555;
-        margin-top: 5px;
+    div[data-testid="stExpanderDetails"] {
+        background-color: rgba(255, 255, 255, 0.4); /* 展开后的背景 */
     }
-    .stock-table td {
-        padding: 8px 0; /* 增加行间距，更透气 */
-        border-bottom: 1px dashed #f5f5f5;
+
+    /* 6. 🔥 iOS 风格持仓列表 (取代旧表格) */
+    .ios-list-container {
+        padding: 0 5px;
     }
-    .stock-table tr:last-child td {
+    .ios-row {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 12px 0;
+        border-bottom: 1px solid rgba(0,0,0,0.05); /* 极细的分隔线 */
+    }
+    .ios-row:last-child {
         border-bottom: none;
     }
-    .stock-index {
-        color: #ccc;
-        font-family: 'Helvetica Neue', sans-serif;
+    
+    /* 序号 */
+    .ios-index {
         font-size: 12px;
-        width: 30px;
+        color: #bbb;
+        width: 25px;
+        font-weight: 600;
     }
-    .stock-name {
+    
+    /* 股票名 */
+    .ios-name {
+        font-size: 15px;
+        color: #333;
         font-weight: 500;
+        flex-grow: 1; /* 撑开中间空间 */
     }
-    .stock-val {
+    
+    /* 涨跌胶囊 */
+    .ios-pill {
+        padding: 4px 10px;
+        border-radius: 8px;
+        font-size: 13px;
+        font-weight: 600;
+        min-width: 70px;
         text-align: right;
-        font-family: 'Arial', sans-serif;
+        /* 默认样式，会被内联样式覆盖 */
+    }
+    
+    /* 左侧详情区美化 */
+    .detail-box {
+        background: rgba(255,255,255,0.6);
+        padding: 15px;
+        border-radius: 12px;
+        border: 1px solid rgba(255,255,255,0.4);
     }
     </style>
 """, unsafe_allow_html=True)
@@ -229,7 +261,7 @@ def main():
     
     with top_col1:
         st.caption(f"{greeting} | {bj_time.strftime('%m-%d %H:%M')}")
-        st.markdown(f"<h2 style='margin-top:-10px; color:#333; letter-spacing:1px'>Family Wealth</h2>", unsafe_allow_html=True)
+        st.markdown(f"<h2 style='margin-top:-10px; color:#333; letter-spacing:0.5px; font-weight:300'>Family Wealth</h2>", unsafe_allow_html=True)
 
     with top_col2:
         with st.popover("⚙️ Settings", use_container_width=True):
@@ -237,7 +269,7 @@ def main():
             mode = st.radio("Mode", ["📡 实时看板", "💰 持仓管理", "💾 收盘存证", "⚖️ 晚间审计"], label_visibility="collapsed")
             st.divider()
             
-            # --- 内部逻辑 ---
+            # --- 内部逻辑 (保持不变) ---
             if mode == "💰 持仓管理":
                 st.info("Modify Holdings")
                 with st.form("holding_form_pop"):
@@ -308,7 +340,7 @@ def main():
                 if fh: st.line_chart(pd.DataFrame.from_dict(fh, orient='index').sort_index())
 
     # ==========================================
-    # 👇 主展示区 (高定UI模式)
+    # 👇 主展示区 (Apple Glass Mode)
     # ==========================================
     if mode == "📡 实时看板":
         placeholder = st.empty()
@@ -366,7 +398,7 @@ def main():
                 
                 # 2. 💎 持仓列表
                 st.markdown("<div style='margin-bottom: 12px;'></div>", unsafe_allow_html=True)
-                st.markdown("<span style='color:#ccc; font-size:12px; letter-spacing:1px; margin-left:2px'>PORTFOLIO</span>", unsafe_allow_html=True)
+                st.markdown("<span style='color:#999; font-size:12px; letter-spacing:1px; margin-left:2px; font-weight:500'>PORTFOLIO</span>", unsafe_allow_html=True)
                 
                 for card in cards_data:
                     # 图标逻辑
@@ -376,34 +408,44 @@ def main():
                     with st.expander(title):
                         kc1, kc2 = st.columns([1.1, 2])
                         
-                        # 左侧详情
-                        color_code = "#d9534f" if card['profit']>0 else "#5cb85c"
+                        # 左侧：玻璃质感小卡片
+                        color_code = "#ff3b30" if card['profit']>0 else "#34c759" # iOS 红/绿
                         kc1.markdown(f"""
-                        <div style='padding-top:5px'>
-                            <div style='font-size:12px; color:#aaa; margin-bottom:-4px'>今日盈亏</div>
-                            <div style='font-size:22px; font-weight:600; color:{color_code}'>￥{card['profit']:+.1f}</div>
-                            <div style='height:12px'></div>
-                            <div style='font-size:12px; color:#aaa; margin-bottom:-4px'>本金</div>
-                            <div style='font-size:16px; color:#555'>￥{card['principal']:,}</div>
+                        <div class='detail-box'>
+                            <div style='font-size:12px; color:#888; margin-bottom:2px'>今日盈亏</div>
+                            <div style='font-size:20px; font-weight:600; color:{color_code}; font-family:-apple-system'>￥{card['profit']:+.1f}</div>
+                            <div style='height:15px'></div>
+                            <div style='font-size:12px; color:#888; margin-bottom:2px'>本金</div>
+                            <div style='font-size:16px; color:#333; font-weight:500'>￥{card['principal']:,}</div>
                         </div>
                         """, unsafe_allow_html=True)
                         
-                        # 右侧：🔥 修复乱码的关键，去除缩进，拼接纯净的 HTML 字符串
-                        table_rows = ""
+                        # 右侧：🔥 iOS 列表风格 (取代 Excel 表格)
+                        # 这里我们用 div + flexbox 模拟苹果的列表
+                        list_html = "<div class='ios-list-container'>"
                         for i, s in enumerate(card['stocks']):
-                            s_color = "#e64a19" if s['pct'] > 0 else "#388e3c"
-                            # 每一行紧凑拼接，不要换行符和缩进
-                            table_rows += f"<tr><td class='stock-index'>{i+1:02d}</td><td class='stock-name'>{s['name']}</td><td class='stock-val' style='color:{s_color}'>{s['pct']:+.2f}%</td></tr>"
+                            # 涨跌胶囊颜色
+                            if s['pct'] > 0:
+                                bg_color = "#ff3b30"; txt_color = "white"
+                            elif s['pct'] < 0:
+                                bg_color = "#34c759"; txt_color = "white"
+                            else:
+                                bg_color = "#8e8e93"; txt_color = "white"
+                            
+                            list_html += f"""
+                            <div class='ios-row'>
+                                <div class='ios-index'>{i+1}</div>
+                                <div class='ios-name'>{s['name']}</div>
+                                <div class='ios-pill' style='background-color:{bg_color}; color:{txt_color}'>{s['pct']:+.2f}%</div>
+                            </div>
+                            """
+                        list_html += "</div>"
                         
-                        # 拼接完整表格
-                        final_table_html = f"<table class='stock-table'>{table_rows}</table>"
-                        
-                        # 渲染
-                        kc2.markdown(final_table_html, unsafe_allow_html=True)
+                        kc2.markdown(list_html, unsafe_allow_html=True)
 
                 # 3. 🌍 底部大盘
                 st.divider()
-                st.markdown("<span style='color:#ccc; font-size:12px; letter-spacing:1px; margin-left:2px'>MARKET INDICES</span>", unsafe_allow_html=True)
+                st.markdown("<span style='color:#999; font-size:12px; letter-spacing:1px; margin-left:2px; font-weight:500'>MARKET INDICES</span>", unsafe_allow_html=True)
                 
                 mc1, mc2, mc3 = st.columns(3)
                 m_cols = [mc1, mc2, mc3]
