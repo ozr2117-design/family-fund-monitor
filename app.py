@@ -8,7 +8,7 @@ from github import Github
 
 # === ⚙️ 基础配置 ===
 st.set_page_config(
-    page_title="全域鹰眼 (V4.0 经典版)",
+    page_title="全域鹰眼 (家庭财富版)",
     page_icon="🦅",
     layout="centered"
 )
@@ -67,7 +67,6 @@ def save_factor_history(date_str, new_factors_dict):
     if not isinstance(history, dict):
         history = {}
     
-    # 获取该日期已有的记录（防止覆盖）
     existing_record = history.get(date_str, {})
     existing_record.update(new_factors_dict)
     history[date_str] = existing_record
@@ -136,7 +135,7 @@ def get_official_nav(fund_code):
 
 # === 🚀 主程序 ===
 def main():
-    st.title("🦅 全域鹰眼 V4.0 (经典版)")
+    st.title("🦅 家庭财富鹰眼 (V4.0)")
 
     funds_config, config_sha = load_json('funds.json')
     if not funds_config:
@@ -173,7 +172,7 @@ def main():
                                     val += prices[s['code']]['change'] * s['weight']
                                     w += s['weight']
                             
-                            # V4 逻辑：只记录纯持仓涨跌，不含系数
+                            # V4 逻辑：只记录纯持仓涨跌
                             raw_est = val / w if w > 0 else 0
                             snapshot_data[name] = raw_est
                         
@@ -181,36 +180,32 @@ def main():
                         history[today_str] = snapshot_data
                         save_json('history.json', history, hist_sha, f"Snapshot {today_str}")
                         
-                        st.success(f"✅ {today_str} 经典版快照已保存！")
+                        st.success(f"✅ {today_str} 快照已保存！")
                         st.json(snapshot_data)
                     else:
                         st.error("行情获取失败")
 
-        # --- ⚖️ 模式 C: 晚间审计 (含防重修复 + 系数记录) ---
+        # --- ⚖️ 模式 C: 晚间审计 ---
         elif mode == "⚖️ 晚间审计":
             st.info("ℹ️ 对比'昨日快照'与'官方净值'，自动修正系数。")
             history, hist_sha = load_json('history.json')
-            
-            # 加载打卡记录
             factor_history, _ = load_json('factor_history.json')
             
             if history:
                 last_date = sorted(history.keys())[-1]
                 st.markdown(f"📅 审计目标：**{last_date}**")
                 
-                # 获取今日已成功的基金
                 audited_records = factor_history.get(last_date, {}) if factor_history else {}
                 
                 if st.button("🚀 开始审计"):
                     updates_log = []
                     need_save = False
-                    current_batch_success = {} # 本批次成功
+                    current_batch_success = {}
                     progress_bar = st.progress(0)
                     
                     for idx, (name, info) in enumerate(funds_config.items()):
-                        # === 🛡️ 防重检查 ===
                         if name in audited_records:
-                            updates_log.append(f"⏭️ {name}: 今日已修正，自动跳过")
+                            updates_log.append(f"⏭️ {name}: 今日已完成")
                             progress_bar.progress((idx + 1) / len(funds_config))
                             continue
                         
@@ -219,13 +214,10 @@ def main():
                         
                         if raw_est is not None and code:
                             off_pct, off_date = get_official_nav(code)
-                            
                             if off_date and off_date >= last_date:
                                 if raw_est != 0:
                                     perfect_factor = off_pct / raw_est
                                     old_factor = info['factor']
-                                    
-                                    # V4 经典修正力度：20% (稍微大一点，因为没有影子缓冲)
                                     new_factor = (old_factor * 0.80) + (perfect_factor * 0.20)
                                     
                                     funds_config[name]['factor'] = round(new_factor, 4)
@@ -234,29 +226,26 @@ def main():
                                     updates_log.append(f"✅ {name}: {old_factor} -> {new_factor:.4f}")
                                     need_save = True
                             else:
-                                updates_log.append(f"⏳ {name}: 官方数据未更新")
+                                updates_log.append(f"⏳ {name}: 官方未更新")
                         else:
-                            updates_log.append(f"❌ {name}: 缺少代码或快照")
+                            updates_log.append(f"❌ {name}: 缺少数据")
                             
                         progress_bar.progress((idx + 1) / len(funds_config))
                     
                     if need_save:
                         save_json('funds.json', funds_config, config_sha, f"Audit Update {last_date}")
                         save_factor_history(last_date, current_batch_success)
-                        
                         st.balloons()
-                        st.success("系数已修正并归档！系统即将重启...")
+                        st.success("系数已修正并归档！重启中...")
                         time.sleep(3)
                         st.rerun()
                     else:
-                        if not updates_log:
-                             st.info("所有基金均已完成今日审计。")
-                        else:
-                             st.text("\n".join(updates_log))
+                        if not updates_log: st.info("今日已完成审计。")
+                        else: st.text("\n".join(updates_log))
             else:
                 st.error("无历史快照")
 
-        # --- 📊 侧边栏常驻：趋势分析 ---
+        # --- 📊 侧边栏：趋势分析 ---
         st.divider()
         with st.expander("📈 模型稳定性分析", expanded=False):
             factor_hist, _ = load_json('factor_history.json')
@@ -265,7 +254,7 @@ def main():
                     df = pd.DataFrame.from_dict(factor_hist, orient='index')
                     df = df.sort_index()
                     if not df.empty:
-                        st.caption("系数走势 (越平越好)")
+                        st.caption("系数走势")
                         st.line_chart(df)
                         st.markdown("**稳定性评分 (标准差):**")
                         std_devs = df.std()
@@ -274,12 +263,12 @@ def main():
                             short_name = name.split('(')[0]
                             st.markdown(f"- {short_name}: :{color}[{val:.4f}]")
                 except:
-                    st.caption("数据不足，无法绘图")
+                    st.caption("数据不足")
             else:
-                st.caption("暂无历史数据")
+                st.caption("暂无数据")
 
     # ==========================================
-    # 👇 主界面：实时监控 (V4 经典单因子)
+    # 👇 主界面：实时监控 (家庭财富版)
     # ==========================================
     if mode == "📡 实时监控":
         placeholder = st.empty()
@@ -297,27 +286,26 @@ def main():
                     time.sleep(2)
                     continue
                 
-                # 1. 顶部状态栏
                 bj_time = datetime.utcnow() + timedelta(hours=8)
-                st.caption(f"最后刷新: {bj_time.strftime('%H:%M:%S')} (经典版V4)")
+                st.caption(f"最后刷新: {bj_time.strftime('%H:%M:%S')}")
                 
-                # 2. 市场风向
-                st.subheader("📈 市场风向")
-                col1, col2, col3 = st.columns(3)
-                cols = [col1, col2, col3]
-                for i, code in enumerate(MARKET_INDICES):
-                    info = market_data.get(code)
-                    if info: cols[i].metric(MARKET_INDICES[code], f"{info['change']:.2f}%")
-                st.divider()
-
-                # 3. 基金卡片
+                # --- 🔥 新增：家庭账户总看板 ---
+                total_daily_profit = 0
+                total_principal = 0
+                
+                # 预计算一轮，为了得出总盈亏
+                fund_results = [] # 暂存计算结果
+                
                 for fund_name, fund_info in funds_config.items():
                     holdings = fund_info['holdings']
                     factor = fund_info.get('factor', 1.0)
+                    # 获取持仓金额 (如果没有配，默认为0)
+                    principal = fund_info.get('holding_value', 0)
                     
                     total_val = 0
                     total_w = 0
                     top_stocks = []
+                    
                     for s in holdings:
                         info = market_data.get(s['code'])
                         if info:
@@ -326,17 +314,68 @@ def main():
                             if len(top_stocks) < 5:
                                 top_stocks.append({"股票": info['name'], "涨跌": f"{info['change']:+.2f}%"})
                     
-                    # V4 核心公式：原始估值 * 系数
                     raw_est = total_val / total_w if total_w > 0 else 0
                     final_est = raw_est * factor
                     
-                    color = "red" if final_est > 0 else "green"
-                    emoji = "🔥" if final_est > 0 else "❄️"
+                    # 计算单只基金盈亏
+                    profit = principal * (final_est / 100)
                     
-                    with st.expander(f"{emoji} {fund_name.split('(')[0]} | {final_est:+.2f}%"):
-                        st.markdown(f"**最终估值**: :{color}[{final_est:+.2f}%]")
-                        st.caption(f"🧮 **算法**: 持仓估值 `{raw_est:.2f}%` × 系数 `{factor}`")
-                        st.table(top_stocks)
+                    total_daily_profit += profit
+                    total_principal += principal
+                    
+                    fund_results.append({
+                        "name": fund_name,
+                        "est": final_est,
+                        "profit": profit,
+                        "factor": factor,
+                        "top_stocks": top_stocks,
+                        "principal": principal
+                    })
+
+                # 渲染总盈亏看板
+                st.header("💰 家庭今日盈亏")
+                col_main1, col_main2 = st.columns(2)
+                
+                # 颜色逻辑
+                p_color = "normal"
+                if total_daily_profit > 0: p_color = "off" # Streamlit metric delta 自动绿色
+                if total_daily_profit < 0: p_color = "inverse" # 红色
+                
+                col_main1.metric(
+                    label="今日预估盈亏 (元)",
+                    value=f"{total_daily_profit:+.2f}",
+                    delta=f"{total_daily_profit:+.2f} 元"
+                )
+                
+                # 简单的收益率计算
+                total_yield = (total_daily_profit / total_principal * 100) if total_principal > 0 else 0
+                col_main2.metric(
+                    label="整体收益率",
+                    value=f"{total_yield:+.2f}%"
+                )
+                st.divider()
+
+                # --- 市场风向 ---
+                st.subheader("📈 市场风向")
+                c1, c2, c3 = st.columns(3)
+                cols = [c1, c2, c3]
+                for i, code in enumerate(MARKET_INDICES):
+                    info = market_data.get(code)
+                    if info: cols[i].metric(MARKET_INDICES[code], f"{info['change']:.2f}%")
+                st.divider()
+
+                # --- 基金卡片 (带盈亏) ---
+                for res in fund_results:
+                    # 标题优化：显示 基金名 | +1.25% | +125.0元
+                    emoji = "🔥" if res['est'] > 0 else "❄️"
+                    color = "red" if res['est'] > 0 else "green"
+                    
+                    title_str = f"{emoji} {res['name'].split('(')[0]} | {res['est']:+.2f}% | ￥{res['profit']:+.1f}"
+                    
+                    with st.expander(title_str):
+                        st.markdown(f"**实时估值**: :{color}[{res['est']:+.2f}%] (盈亏: `￥{res['profit']:+.2f}`)")
+                        st.caption(f"持仓: ￥{res['principal']} | 系数: `{res['factor']}`")
+                        st.table(res['top_stocks'])
             
             time.sleep(30)
 
