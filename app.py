@@ -6,31 +6,31 @@ import pandas as pd
 from datetime import datetime, timedelta
 from github import Github
 
-# === 🎨 1. 页面配置与 CSS 魔法 (珠宝高定版) ===
+# === 🎨 1. 页面配置与 CSS 魔法 (V4.2 修复版) ===
 st.set_page_config(
     page_title="Family Wealth",
-    page_icon="💎", # 图标换成钻石
+    page_icon="💎",
     layout="centered",
     initial_sidebar_state="collapsed"
 )
 
-# 注入 CSS：珠宝风 UI + 细节微调
+# 注入 CSS
 st.markdown("""
     <style>
-    /* 1. 全局字体与背景 - 暖白高级感 */
+    /* 1. 全局样式 */
     .stApp {
         font-family: -apple-system, BlinkMacSystemFont, "Helvetica Neue", Helvetica, Arial, sans-serif;
         background-color: #fcfcfc; 
     }
     
-    /* 2. 隐藏原生侧边栏 */
+    /* 2. 隐藏无关元素 */
     [data-testid="stSidebar"] {display: none;}
     [data-testid="stSidebarCollapsedControl"] {display: none;}
     #MainMenu {visibility: hidden;}
     footer {visibility: hidden;}
     header {visibility: hidden;}
     
-    /* 3. Settings 按钮美化 */
+    /* 3. Settings 按钮 */
     div[data-testid="stPopover"] > button {
         border-radius: 20px;
         border: 1px solid #f0f0f0;
@@ -41,29 +41,32 @@ st.markdown("""
         transition: all 0.3s;
     }
     div[data-testid="stPopover"] > button:hover {
-        border-color: #ffd700; /* 金色边框 */
-        color: #b8860b; /* 暗金色字体 */
+        border-color: #ffd700;
+        color: #b8860b;
     }
 
-    /* 4. 核心优化：收益率框框等高对齐 */
+    /* 4. 🔥 核心修复：收益率框框强制等高 */
     div[data-testid="stMetric"] {
         background-color: #ffffff;
         border: 1px solid #f8f8f8;
         padding: 15px 20px;
         border-radius: 12px;
         box-shadow: 0 8px 20px rgba(0,0,0,0.04);
-        min-height: 110px; /* 🔥 强制等高，解决对齐问题 */
+        /* 强制高度一致，并垂直居中 */
+        min-height: 115px !important; 
+        max-height: 115px !important;
         display: flex;
         flex-direction: column;
         justify-content: center;
     }
-    /* 优化 Metric 的标签颜色 */
+    
     div[data-testid="stMetricLabel"] {
         color: #888;
         font-size: 14px;
+        margin-bottom: 5px; /* 标签和数字拉开一点距离 */
     }
     
-    /* 5. 基金详情卡片优化 */
+    /* 5. 基金详情卡片 */
     .streamlit-expanderHeader {
         background-color: #fff;
         border-radius: 12px;
@@ -80,25 +83,26 @@ st.markdown("""
         margin-bottom: 12px;
     }
     
-    /* 6. 自定义股票列表样式 (HTML Table) */
+    /* 6. 股票列表样式 (HTML Table) */
     .stock-table {
         width: 100%;
         border-collapse: collapse;
         font-size: 13px;
         color: #555;
+        margin-top: 5px;
     }
     .stock-table td {
-        padding: 6px 0;
-        border-bottom: 1px dashed #f0f0f0;
+        padding: 8px 0; /* 增加行间距，更透气 */
+        border-bottom: 1px dashed #f5f5f5;
     }
     .stock-table tr:last-child td {
         border-bottom: none;
     }
     .stock-index {
         color: #ccc;
-        font-family: 'Courier New', monospace;
+        font-family: 'Helvetica Neue', sans-serif;
         font-size: 12px;
-        width: 25px;
+        width: 30px;
     }
     .stock-name {
         font-weight: 500;
@@ -233,7 +237,7 @@ def main():
             mode = st.radio("Mode", ["📡 实时看板", "💰 持仓管理", "💾 收盘存证", "⚖️ 晚间审计"], label_visibility="collapsed")
             st.divider()
             
-            # --- 内部逻辑 (保持不变) ---
+            # --- 内部逻辑 ---
             if mode == "💰 持仓管理":
                 st.info("Modify Holdings")
                 with st.form("holding_form_pop"):
@@ -351,14 +355,13 @@ def main():
                         "stocks": stocks
                     })
                 
-                # 1. 💰 总盈亏 (对齐优化)
+                # 1. 💰 总盈亏 (高度强制对齐)
                 st.markdown("<br>", unsafe_allow_html=True)
                 main_col1, main_col2 = st.columns([1.8, 1])
                 
                 main_col1.metric("今日家庭收益 (元)", f"{total_profit:+.2f}", delta=f"{total_profit:+.2f}")
                 
                 yield_rate = (total_profit/total_principal*100) if total_principal > 0 else 0
-                # 收益率也显示正负号，颜色保持灰度以免喧宾夺主，或用 delta_color="normal"
                 main_col2.metric("收益率", f"{yield_rate:+.2f}%", delta_color="normal")
                 
                 # 2. 💎 持仓列表
@@ -366,18 +369,15 @@ def main():
                 st.markdown("<span style='color:#ccc; font-size:12px; letter-spacing:1px; margin-left:2px'>PORTFOLIO</span>", unsafe_allow_html=True)
                 
                 for card in cards_data:
-                    # 🔥 珠宝图标逻辑
-                    # 赚了就是 "👑"(皇冠/金饰)，亏了就是 "📿"(珍珠项链/守财)
+                    # 图标逻辑
                     icon = "👑" if card['est'] > 0 else "📿"
-                    
                     title = f"{icon} {card['name']}　{card['est']:+.2f}%"
                     
                     with st.expander(title):
                         kc1, kc2 = st.columns([1.1, 2])
                         
-                        # 左侧：UI 优化，去掉背景块，用大字体
-                        color_code = "#d9534f" if card['profit']>0 else "#5cb85c" # 这里的红绿可以微调
-                        
+                        # 左侧详情
+                        color_code = "#d9534f" if card['profit']>0 else "#5cb85c"
                         kc1.markdown(f"""
                         <div style='padding-top:5px'>
                             <div style='font-size:12px; color:#aaa; margin-bottom:-4px'>今日盈亏</div>
@@ -388,19 +388,18 @@ def main():
                         </div>
                         """, unsafe_allow_html=True)
                         
-                        # 右侧：手写 HTML 表格 (美化版，序号从1开始)
-                        table_html = "<table class='stock-table'>"
+                        # 右侧：🔥 修复乱码的关键，去除缩进，拼接纯净的 HTML 字符串
+                        table_rows = ""
                         for i, s in enumerate(card['stocks']):
-                            s_color = "#e64a19" if s['pct'] > 0 else "#388e3c" # 股票涨跌颜色
-                            table_html += f"""
-                            <tr>
-                                <td class='stock-index'>{i+1:02d}</td>
-                                <td class='stock-name'>{s['name']}</td>
-                                <td class='stock-val' style='color:{s_color}'>{s['pct']:+.2f}%</td>
-                            </tr>
-                            """
-                        table_html += "</table>"
-                        kc2.markdown(table_html, unsafe_allow_html=True)
+                            s_color = "#e64a19" if s['pct'] > 0 else "#388e3c"
+                            # 每一行紧凑拼接，不要换行符和缩进
+                            table_rows += f"<tr><td class='stock-index'>{i+1:02d}</td><td class='stock-name'>{s['name']}</td><td class='stock-val' style='color:{s_color}'>{s['pct']:+.2f}%</td></tr>"
+                        
+                        # 拼接完整表格
+                        final_table_html = f"<table class='stock-table'>{table_rows}</table>"
+                        
+                        # 渲染
+                        kc2.markdown(final_table_html, unsafe_allow_html=True)
 
                 # 3. 🌍 底部大盘
                 st.divider()
