@@ -2,12 +2,13 @@ import streamlit as st
 import requests
 import time
 import json
+import pandas as pd
 from datetime import datetime, timedelta
 from github import Github
 
 # === ⚙️ 基础配置 ===
 st.set_page_config(
-    page_title="全域鹰眼 (存证审计版)",
+    page_title="全域鹰眼 (V4.0 经典版)",
     page_icon="🦅",
     layout="centered"
 )
@@ -19,12 +20,11 @@ MARKET_INDICES = {
     'hkHSTECH': '恒生科技'
 }
 
-# ⚠️⚠️⚠️ 请务必确认这里的基金名称与 funds.json 里的完全一致
-# 并且填入正确的 6 位基金代码 (用于抓取官方净值)
+# ⚠️ 确保是真实的 6 位代码
 FUND_CODES_MAP = {
-    '摩根均衡C (梁鹏/周期)': '021274',
-    '泰康新锐C (韩庆/成长)': '017366',
-    '财通优选C (金梓才/AI)': '021528' 
+    '摩根均衡C (梁鹏/周期)': '009968',
+    '泰康新锐C (韩庆/成长)': '009340',
+    '财通优选C (金梓才/AI)': '009354'
 }
 
 # === 🛠️ GitHub 数据库操作 ===
@@ -38,7 +38,7 @@ def get_repo():
         g = Github(token)
         return g.get_user(username).get_repo(repo_name)
     except Exception as e:
-        st.error(f"GitHub 连接失败，请检查 Secrets 配置: {e}")
+        st.error(f"GitHub 连接失败: {e}")
         return None
 
 def load_json(filename):
@@ -49,7 +49,6 @@ def load_json(filename):
         content = repo.get_contents(filename)
         return json.loads(content.decoded_content.decode('utf-8')), content.sha
     except:
-        st.warning(f"文件 {filename} 读取失败或不存在")
         return {}, None
 
 def save_json(filename, data, sha, message):
@@ -62,7 +61,20 @@ def save_json(filename, data, sha, message):
         else:
             repo.create_file(filename, message, new_content)
 
-# === 🕷️ 数据获取 ===
+def save_factor_history(date_str, new_factors_dict):
+    """📈 记录仪：保存当天的系数快照"""
+    history, sha = load_json('factor_history.json')
+    if not isinstance(history, dict):
+        history = {}
+    
+    # 获取该日期已有的记录（防止覆盖）
+    existing_record = history.get(date_str, {})
+    existing_record.update(new_factors_dict)
+    history[date_str] = existing_record
+    
+    save_json('factor_history.json', history, sha, f"Factor Log {date_str}")
+
+# === 🕷️ 数据获取 (爬虫模块) ===
 
 def get_realtime_price(stock_codes):
     """腾讯接口获取实时行情"""
@@ -86,7 +98,6 @@ def get_realtime_price(stock_codes):
                 data = part.split('="')[1].strip('"').split('~')
                 if len(data) > 30:
                     name = data[1].replace(" ", "")
-                    # 计算涨跌幅
                     current = float(data[3])
                     close = float(data[4])
                     pct = 0.0
@@ -100,13 +111,8 @@ def get_realtime_price(stock_codes):
 def get_official_nav(fund_code):
     """
     🚀 升级版爬虫：直连天天基金(东财)官方接口
-    需要伪装 Headers，数据最快最全。
     """
-    # 官方历史净值接口 (LSJZ = Lishi Jingzhi)
-    # pageIndex=1&pageSize=1 表示只取最新的一条数据
     url = f"https://api.fund.eastmoney.com/f10/lsjz?fundCode={fund_code}&pageIndex=1&pageSize=1"
-    
-    # ⚠️ 关键：东财接口必须带 Referer，否则会报 403 Forbidden
     headers = {
         "Referer": "http://fund.eastmoney.com/",
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
@@ -116,60 +122,45 @@ def get_official_nav(fund_code):
         r = requests.get(url, headers=headers, timeout=5)
         if r.status_code == 200:
             res = r.json()
-            # 解析官方数据结构: Data -> LSJZList -> 第一个元素
             if "Data" in res and "LSJZList" in res["Data"]:
                 data_list = res["Data"]["LSJZList"]
                 if len(data_list) > 0:
                     latest_data = data_list[0]
-                    
-                    # 字段说明：
-                    # FSRQ: 净值日期 (例如 2026-01-29)
-                    # JZZZL: 日增长率 (例如 1.25 表示 +1.25%)
-                    
                     net_date = latest_data["FSRQ"]
                     growth_rate = latest_data["JZZZL"]
-                    
-                    # 容错处理：有时候刚更新净值但涨跌幅还是空字符串
-                    if growth_rate == "":
-                        return None, None
-                        
+                    if growth_rate == "": return None, None
                     return float(growth_rate), net_date
-    except Exception as e:
-        # 调试时可以打印错误 st.error(f"接口报错: {e}") 
+    except:
         pass
-    
     return None, None
+
 # === 🚀 主程序 ===
 def main():
-    st.title("🦅 全域鹰眼 (V4.0)")
+    st.title("🦅 全域鹰眼 V4.0 (经典版)")
 
-    # 1. 读取配置
     funds_config, config_sha = load_json('funds.json')
     if not funds_config:
         st.stop()
 
     # ==========================================
-    # 👇 侧边栏：三大模式控制台
+    # 👇 侧边栏控制台
     # ==========================================
     with st.sidebar:
         st.header("🎮 控制台")
         mode = st.radio("选择模式", ["📡 实时监控", "💾 收盘存证", "⚖️ 晚间审计"])
         st.divider()
 
-        # --- 💾 模式 B: 收盘存证 (下午 14:50 - 15:10 使用) ---
+        # --- 💾 模式 B: 收盘存证 ---
         if mode == "💾 收盘存证":
-            st.info("ℹ️ 最佳操作时间：收盘后 (15:00 - 23:59)。数据已定型，存证最精准。")
-            
-            if st.button("📸 立即拍摄快照 (Save Snapshot)"):
-                with st.spinner("正在计算全网实时数据..."):
+            st.info("ℹ️ 最佳操作时间：收盘后 (15:00 - 23:59)。")
+            if st.button("📸 立即存证"):
+                with st.spinner("正在计算(经典单因子)..."):
                     snapshot_data = {}
-                    all_stocks = []
-                    # 收集所有股票代码
+                    all_codes = []
                     for f in funds_config.values():
-                        for s in f['holdings']: all_stocks.append(s['code'])
+                        for s in f['holdings']: all_codes.append(s['code'])
                     
-                    # 抓取行情
-                    prices = get_realtime_price(list(set(all_stocks)))
+                    prices = get_realtime_price(list(set(all_codes)))
                     
                     if prices:
                         today_str = (datetime.utcnow() + timedelta(hours=8)).strftime("%Y-%m-%d")
@@ -182,100 +173,117 @@ def main():
                                     val += prices[s['code']]['change'] * s['weight']
                                     w += s['weight']
                             
-                            # ⚠️ 关键点：这里存储的是【未乘系数】的原始估值
-                            # 这样我们才能算出纯粹的持仓偏差
-                            if w > 0:
-                                raw_est = val / w
-                                snapshot_data[name] = raw_est
+                            # V4 逻辑：只记录纯持仓涨跌，不含系数
+                            raw_est = val / w if w > 0 else 0
+                            snapshot_data[name] = raw_est
                         
-                        # 读取旧历史并追加
                         history, hist_sha = load_json('history.json')
                         history[today_str] = snapshot_data
-                        
-                        # 写入 GitHub
                         save_json('history.json', history, hist_sha, f"Snapshot {today_str}")
-                        st.success(f"✅ {today_str} 快照已保存！")
+                        
+                        st.success(f"✅ {today_str} 经典版快照已保存！")
                         st.json(snapshot_data)
                     else:
-                        st.error("行情接口连接失败，无法存证")
+                        st.error("行情获取失败")
 
-        # --- ⚖️ 模式 C: 晚间审计 (晚上 21:30 后使用) ---
+        # --- ⚖️ 模式 C: 晚间审计 (含防重修复 + 系数记录) ---
         elif mode == "⚖️ 晚间审计":
-            st.info("ℹ️ 对比'昨日快照'与'官方净值'，自动修正误差系数。")
-            
+            st.info("ℹ️ 对比'昨日快照'与'官方净值'，自动修正系数。")
             history, hist_sha = load_json('history.json')
+            
+            # 加载打卡记录
+            factor_history, _ = load_json('factor_history.json')
+            
             if history:
-                # 自动找最近的一个日期
                 last_date = sorted(history.keys())[-1]
-                st.markdown(f"📅 审计目标日期：**{last_date}**")
+                st.markdown(f"📅 审计目标：**{last_date}**")
                 
-                if st.button("🚀 开始审计与修正"):
+                # 获取今日已成功的基金
+                audited_records = factor_history.get(last_date, {}) if factor_history else {}
+                
+                if st.button("🚀 开始审计"):
                     updates_log = []
                     need_save = False
+                    current_batch_success = {} # 本批次成功
                     progress_bar = st.progress(0)
                     
-                    # 遍历每一个基金
                     for idx, (name, info) in enumerate(funds_config.items()):
-                        # 1. 找算法数据
-                        raw_est = history[last_date].get(name)
+                        # === 🛡️ 防重检查 ===
+                        if name in audited_records:
+                            updates_log.append(f"⏭️ {name}: 今日已修正，自动跳过")
+                            progress_bar.progress((idx + 1) / len(funds_config))
+                            continue
                         
-                        # 2. 找官方数据
+                        raw_est = history[last_date].get(name)
                         code = FUND_CODES_MAP.get(name)
                         
                         if raw_est is not None and code:
                             off_pct, off_date = get_official_nav(code)
                             
-                            # 校验日期：官方数据必须 >= 快照日期
                             if off_date and off_date >= last_date:
-                                # 3. 计算新系数
-                                # 公式：官方涨跌 = 原始估值 * 完美系数
                                 if raw_est != 0:
                                     perfect_factor = off_pct / raw_est
                                     old_factor = info['factor']
                                     
-                                    # 🤖 减震逻辑：EMA (80%旧 + 20%新)
-                                    new_factor = (old_factor * 0.8) + (perfect_factor * 0.2)
+                                    # V4 经典修正力度：20% (稍微大一点，因为没有影子缓冲)
+                                    new_factor = (old_factor * 0.80) + (perfect_factor * 0.20)
                                     
-                                    # 更新配置字典
                                     funds_config[name]['factor'] = round(new_factor, 4)
+                                    current_batch_success[name] = round(new_factor, 4)
                                     
-                                    # 记录日志
-                                    err = off_pct - (raw_est * old_factor)
-                                    updates_log.append(f"✅ {name}\n   误差: {err:+.2f}% | 系数: {old_factor} -> {new_factor:.4f}")
+                                    updates_log.append(f"✅ {name}: {old_factor} -> {new_factor:.4f}")
                                     need_save = True
-                                else:
-                                    updates_log.append(f"⚠️ {name}: 原始估值为0，跳过")
                             else:
-                                updates_log.append(f"⏳ {name}: 官方数据尚未更新 ({off_date})")
+                                updates_log.append(f"⏳ {name}: 官方数据未更新")
                         else:
-                            updates_log.append(f"❌ {name}: 缺少代码配置或快照")
-                        
+                            updates_log.append(f"❌ {name}: 缺少代码或快照")
+                            
                         progress_bar.progress((idx + 1) / len(funds_config))
                     
-                    st.divider()
-                    for log in updates_log:
-                        st.text(log)
-                    
-                    # 4. 保存结果
                     if need_save:
-                        with st.spinner("正在写入新系数..."):
-                            save_json('funds.json', funds_config, config_sha, f"Audit Update {last_date}")
+                        save_json('funds.json', funds_config, config_sha, f"Audit Update {last_date}")
+                        save_factor_history(last_date, current_batch_success)
+                        
                         st.balloons()
-                        st.success("🎉 系数已修正！系统将在 3 秒后自动重启...")
+                        st.success("系数已修正并归档！系统即将重启...")
                         time.sleep(3)
                         st.rerun()
                     else:
-                        st.warning("没有进行任何修改 (可能是数据未更新)")
+                        if not updates_log:
+                             st.info("所有基金均已完成今日审计。")
+                        else:
+                             st.text("\n".join(updates_log))
             else:
-                st.error("找不到历史快照，请先执行【收盘存证】。")
+                st.error("无历史快照")
+
+        # --- 📊 侧边栏常驻：趋势分析 ---
+        st.divider()
+        with st.expander("📈 模型稳定性分析", expanded=False):
+            factor_hist, _ = load_json('factor_history.json')
+            if factor_hist:
+                try:
+                    df = pd.DataFrame.from_dict(factor_hist, orient='index')
+                    df = df.sort_index()
+                    if not df.empty:
+                        st.caption("系数走势 (越平越好)")
+                        st.line_chart(df)
+                        st.markdown("**稳定性评分 (标准差):**")
+                        std_devs = df.std()
+                        for name, val in std_devs.items():
+                            color = "green" if val < 0.05 else "red"
+                            short_name = name.split('(')[0]
+                            st.markdown(f"- {short_name}: :{color}[{val:.4f}]")
+                except:
+                    st.caption("数据不足，无法绘图")
+            else:
+                st.caption("暂无历史数据")
 
     # ==========================================
-    # 👇 主界面：实时监控 (只在监控模式显示)
+    # 👇 主界面：实时监控 (V4 经典单因子)
     # ==========================================
     if mode == "📡 实时监控":
         placeholder = st.empty()
         
-        # 预先提取所有代码
         all_codes = list(MARKET_INDICES.keys())
         for f in funds_config.values():
             for s in f['holdings']: all_codes.append(s['code'])
@@ -283,71 +291,54 @@ def main():
         
         while True:
             with placeholder.container():
-                # 1. 获取行情
                 market_data = get_realtime_price(all_codes)
                 if not market_data:
-                    st.warning("📡 正在连接行情卫星...")
+                    st.warning("📡 连接卫星中...")
                     time.sleep(2)
                     continue
                 
-                # 2. 显示时间
+                # 1. 顶部状态栏
                 bj_time = datetime.utcnow() + timedelta(hours=8)
-                st.caption(f"最后刷新: {bj_time.strftime('%H:%M:%S')} (北京时间) | V4.0运行中")
+                st.caption(f"最后刷新: {bj_time.strftime('%H:%M:%S')} (经典版V4)")
                 
-                # 3. 大盘看板
+                # 2. 市场风向
                 st.subheader("📈 市场风向")
                 col1, col2, col3 = st.columns(3)
                 cols = [col1, col2, col3]
                 for i, code in enumerate(MARKET_INDICES):
                     info = market_data.get(code)
-                    if info:
-                        cols[i].metric(MARKET_INDICES[code], f"{info['change']:.2f}%")
-                
+                    if info: cols[i].metric(MARKET_INDICES[code], f"{info['change']:.2f}%")
                 st.divider()
 
-                # 4. 基金列表
+                # 3. 基金卡片
                 for fund_name, fund_info in funds_config.items():
                     holdings = fund_info['holdings']
-                    factor = fund_info['factor']
+                    factor = fund_info.get('factor', 1.0)
                     
                     total_val = 0
                     total_w = 0
-                    
-                    # 算持仓
                     top_stocks = []
                     for s in holdings:
                         info = market_data.get(s['code'])
                         if info:
                             total_val += info['change'] * s['weight']
                             total_w += s['weight']
-                            # 收集前5大持仓用于展示
                             if len(top_stocks) < 5:
-                                top_stocks.append({
-                                    "股票": info['name'],
-                                    "涨跌": f"{info['change']:+.2f}%"
-                                })
+                                top_stocks.append({"股票": info['name'], "涨跌": f"{info['change']:+.2f}%"})
                     
-                    if total_w > 0:
-                        # 核心公式：原始 * 系数
-                        raw_est = total_val / total_w
-                        final_est = raw_est * factor
-                        
-                        # 样式逻辑
-                        color = "red" if final_est > 0 else "green"
-                        emoji = "🔥" if final_est > 0 else "❄️"
-                        expanded = abs(final_est) > 1.5 # 大波动自动展开
-                        
-                        with st.expander(f"{emoji} {fund_name.split('(')[0]} | {final_est:+.2f}%", expanded=expanded):
-                            st.markdown(f"**实时估值**: :{color}[{final_est:+.2f}%] (系数: `{factor}`)")
-                            if final_est > 2.0: st.warning("💡 提示：热度过高")
-                            elif final_est < -2.0: st.success("💡 提示：黄金坑机会")
-                            
-                            st.table(top_stocks)
+                    # V4 核心公式：原始估值 * 系数
+                    raw_est = total_val / total_w if total_w > 0 else 0
+                    final_est = raw_est * factor
+                    
+                    color = "red" if final_est > 0 else "green"
+                    emoji = "🔥" if final_est > 0 else "❄️"
+                    
+                    with st.expander(f"{emoji} {fund_name.split('(')[0]} | {final_est:+.2f}%"):
+                        st.markdown(f"**最终估值**: :{color}[{final_est:+.2f}%]")
+                        st.caption(f"🧮 **算法**: 持仓估值 `{raw_est:.2f}%` × 系数 `{factor}`")
+                        st.table(top_stocks)
             
-            # 30秒刷新一次
             time.sleep(30)
 
 if __name__ == "__main__":
     main()
-
-
