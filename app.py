@@ -105,7 +105,7 @@ def main():
     # 把它放在 main() 的一开始，placeholder 之前，while True 之前！
     
     with st.sidebar:
-        st.header("🛠️ 晚间验尸官 (校准)")
+        st.header("🛠️ 晚间校准")
         
         # 1. 选择要校准的基金
         fund_list = list(MY_FUNDS_CONFIG.keys())
@@ -228,4 +228,5 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
