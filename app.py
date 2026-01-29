@@ -101,6 +101,48 @@ def get_realtime_price(stock_codes):
 def main():
     st.title("🦅 全域鹰眼监控 Pro+")
     
+    # 👇👇👇 【在这里粘贴】 👇👇👇
+    # 把它放在 main() 的一开始，placeholder 之前，while True 之前！
+    
+    with st.sidebar:
+        st.header("🛠️ 晚间验尸官 (校准)")
+        
+        # 1. 选择要校准的基金
+        fund_list = list(MY_FUNDS_CONFIG.keys())
+        selected_fund = st.selectbox("选择基金", fund_list)
+        
+        # 2. 输入数据
+        st.caption("请对照支付宝/天天基金今晚的净值")
+        official_pct = st.number_input(f"【B】官方实际涨跌 (%)", value=0.0, step=0.01, format="%.2f")
+        est_pct = st.number_input(f"【A】算法刚才算的估值 (%)", value=0.0, step=0.01, format="%.2f")
+        
+        # 3. 计算逻辑
+        if st.button("计算新系数"):
+            if est_pct == 0:
+                st.error("算法估值不能为0")
+            else:
+                current_factor = MY_FUNDS_CONFIG[selected_fund]['factor']
+                # 还原原始估值
+                raw_est = est_pct / current_factor 
+                
+                # 计算完美系数
+                perfect_factor = official_pct / raw_est
+                
+                # EMA 平滑处理 (90%旧 + 10%新)
+                new_factor = (current_factor * 0.9) + (perfect_factor * 0.1)
+                
+                st.divider()
+                st.markdown(f"**当前系数:** `{current_factor:.2f}`")
+                st.markdown(f"**建议系数:** `{new_factor:.2f}`")
+                
+                diff = official_pct - est_pct
+                if abs(diff) < 0.2:
+                    st.success("✅ 误差极小，无需修改！")
+                else:
+                    st.error(f"⚠️ 建议去代码里把 factor 改为 {new_factor:.2f}")
+
+    # 👆👆👆 【粘贴结束】 👆👆👆
+    
     placeholder = st.empty()
     
     all_codes = list(MARKET_INDICES.keys())
@@ -186,3 +228,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+
