@@ -11,38 +11,38 @@ st.set_page_config(
     page_title="Family Wealth",
     page_icon="🌸",
     layout="centered",
-    initial_sidebar_state="collapsed" # 默认收起
+    initial_sidebar_state="collapsed"
 )
 
-# 注入 CSS：彻底隐藏侧边栏，美化按钮和字体
+# 注入 CSS：美化 UI
 st.markdown("""
     <style>
     /* 1. 字体与全局背景 */
     .stApp {
         font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-        background-color: #fdfdfd; /* 极淡的暖白背景 */
+        background-color: #fdfdfd;
     }
     
-    /* 2. 隐藏原生侧边栏和顶部的汉堡菜单 */
+    /* 2. 隐藏原生侧边栏 */
     [data-testid="stSidebar"] {display: none;}
     [data-testid="stSidebarCollapsedControl"] {display: none;}
     #MainMenu {visibility: hidden;}
     footer {visibility: hidden;}
     header {visibility: hidden;}
     
-    /* 3. 美化"控制台"按钮 (Popover Button) */
+    /* 3. 美化右上角 Settings 按钮 */
     div[data-testid="stPopover"] > button {
         border-radius: 20px;
         border: 1px solid #eee;
         background-color: white;
-        color: #666;
+        color: #888;
         box-shadow: 0 2px 5px rgba(0,0,0,0.05);
         font-size: 14px;
         padding: 5px 15px;
         transition: all 0.3s;
     }
     div[data-testid="stPopover"] > button:hover {
-        border-color: #ffb7b2; /* 悬浮变粉色 */
+        border-color: #ffb7b2;
         color: #ff80ab;
     }
 
@@ -50,9 +50,9 @@ st.markdown("""
     div[data-testid="stMetric"] {
         background-color: #ffffff;
         border: 1px solid #fcfcfc;
-        padding: 15px 20px;
-        border-radius: 16px;
-        box-shadow: 0 10px 25px rgba(0,0,0,0.03); /* 更柔和的高级阴影 */
+        padding: 10px 15px; /* 稍微调小一点内边距，更精致 */
+        border-radius: 12px;
+        box-shadow: 0 4px 15px rgba(0,0,0,0.03); 
     }
     
     /* 5. 基金详情卡片 */
@@ -61,14 +61,14 @@ st.markdown("""
         border-radius: 12px;
         font-weight: 500;
         color: #444;
-        border: 1px solid #f0f0f0;
+        border: 1px solid #f5f5f5;
     }
     div[data-testid="stExpander"] {
         border: none;
-        box-shadow: 0 4px 12px rgba(0,0,0,0.02);
+        box-shadow: 0 2px 8px rgba(0,0,0,0.02);
         border-radius: 12px;
         background-color: white;
-        margin-bottom: 15px;
+        margin-bottom: 10px; /* 减小卡片间距 */
     }
     </style>
 """, unsafe_allow_html=True)
@@ -177,15 +177,13 @@ def main():
     if not funds_config: st.stop()
 
     # ==========================================
-    # 🌟 顶部导航栏 (替代 Sidebar)
+    # 🌟 顶部导航栏
     # ==========================================
     
-    # 1. 问候语逻辑
     bj_time = datetime.utcnow() + timedelta(hours=8)
     now_hour = bj_time.hour
     greeting = "Good Morning ☀️" if 5 <= now_hour < 12 else "Good Afternoon ☕" if 12 <= now_hour < 18 else "Good Evening 🌙"
 
-    # 2. 顶部两列布局：左边问候，右边控制台按钮
     top_col1, top_col2 = st.columns([3, 1])
     
     with top_col1:
@@ -193,37 +191,32 @@ def main():
         st.markdown(f"<h2 style='margin-top:-10px; color:#444'>Family Wealth</h2>", unsafe_allow_html=True)
 
     with top_col2:
-        # 🔥 核心改动：用 st.popover 代替 Sidebar
-        # 这就是一个右上角的浮窗按钮，点击才会展开设置
-        with st.popover("⚙️ 控制台", use_container_width=True):
-            st.markdown("### 🛠️ 功能菜单")
-            mode = st.radio("选择模式", ["📡 实时看板", "💰 持仓管理", "💾 收盘存证", "⚖️ 晚间审计"], label_visibility="collapsed")
+        # 🔥 修改点1：按钮改名为英文 "Settings"
+        with st.popover("⚙️ Settings", use_container_width=True):
+            st.markdown("### 🛠️ Menu")
+            mode = st.radio("Mode", ["📡 实时看板", "💰 持仓管理", "💾 收盘存证", "⚖️ 晚间审计"], label_visibility="collapsed")
             st.divider()
             
-            # --- 把原来的侧边栏逻辑全部塞进这个小弹窗里 ---
-            
-            # 💰 持仓管理逻辑
+            # --- 内部逻辑保持不变 ---
             if mode == "💰 持仓管理":
-                st.info("修改后点击保存")
+                st.info("Modify Holdings")
                 with st.form("holding_form_pop"):
                     new_holdings = {}
                     for name, info in funds_config.items():
                         current_val = info.get('holding_value', 0)
-                        # 简写名字，省空间
                         short_name = name.split('(')[0]
                         new_val = st.number_input(short_name, value=float(current_val), step=100.0)
                         new_holdings[name] = new_val
                     
-                    if st.form_submit_button("💾 保存生效"):
+                    if st.form_submit_button("Save"):
                         for name, val in new_holdings.items(): funds_config[name]['holding_value'] = val
                         save_json('funds.json', funds_config, config_sha, "Update Holdings")
-                        st.toast("✅ 持仓已更新！")
+                        st.toast("Updated!")
                         time.sleep(1); st.rerun()
 
-            # 💾 存证逻辑
             elif mode == "💾 收盘存证":
-                if st.button("📸 立即存证", type="primary", use_container_width=True):
-                    with st.spinner("⏳"):
+                if st.button("📸 Snapshot", type="primary", use_container_width=True):
+                    with st.spinner("Saving..."):
                         snapshot_data = {}
                         all_codes = []
                         for f in funds_config.values():
@@ -240,24 +233,19 @@ def main():
                             history, hist_sha = load_json('history.json')
                             history[today_str] = snapshot_data
                             save_json('history.json', history, hist_sha, f"Snapshot {today_str}")
-                            st.success(f"✅ {today_str} 已存证")
-            
-            # ⚖️ 审计逻辑
+                            st.success(f"Saved: {today_str}")
+
             elif mode == "⚖️ 晚间审计":
-                if st.button("🚀 开始修正", type="primary", use_container_width=True):
+                if st.button("🚀 Audit & Fix", type="primary", use_container_width=True):
                     history, _ = load_json('history.json')
                     factor_hist, _ = load_json('factor_history.json')
                     if history:
                         last_date = sorted(history.keys())[-1]
                         audited = factor_hist.get(last_date, {}) if factor_hist else {}
                         updates = []; need_save = False; current_success = {}
-                        
-                        st.caption(f"审计日期: {last_date}")
                         progress = st.progress(0)
-                        
                         for idx, (name, info) in enumerate(funds_config.items()):
                             if name in audited: progress.progress((idx+1)/len(funds_config)); continue
-                            
                             raw = history[last_date].get(name)
                             code = FUND_CODES_MAP.get(name)
                             if raw is not None and code:
@@ -266,26 +254,21 @@ def main():
                                     new_f = (info['factor'] * 0.8) + ((off_pct / raw) * 0.2)
                                     funds_config[name]['factor'] = round(new_f, 4)
                                     current_success[name] = round(new_f, 4)
-                                    updates.append(f"{name.split('(')[0]}: 更新")
                                     need_save = True
                             progress.progress((idx+1)/len(funds_config))
-                        
                         if need_save:
                             save_json('funds.json', funds_config, config_sha, "Audit")
                             save_factor_history(last_date, current_success)
-                            st.success("✅ 系数已修正"); time.sleep(1); st.rerun()
-                        else:
-                            st.info("暂无更新")
+                            st.success("Fixed!"); time.sleep(1); st.rerun()
+                        else: st.info("No updates needed")
 
-            # 底部显示图表入口
             st.divider()
-            with st.expander("📊 系数走势图"):
+            with st.expander("📊 Stability"):
                 fh, _ = load_json('factor_history.json')
                 if fh: st.line_chart(pd.DataFrame.from_dict(fh, orient='index').sort_index())
-                else: st.caption("暂无数据")
 
     # ==========================================
-    # 👇 主展示区 (Focus Mode)
+    # 👇 主展示区
     # ==========================================
     if mode == "📡 实时看板":
         placeholder = st.empty()
@@ -299,9 +282,8 @@ def main():
             with placeholder.container():
                 market_data = get_realtime_price(all_codes)
                 if not market_data:
-                    st.warning("📡 连接卫星中..."); time.sleep(2); continue
+                    st.warning("Connecting..."); time.sleep(2); continue
                 
-                # 计算总盈亏
                 total_profit = 0
                 total_principal = 0
                 cards_data = []
@@ -330,42 +312,24 @@ def main():
                         "stocks": stocks
                     })
                 
-                # 1. 💰 总盈亏卡片 (高端C位)
-                st.markdown("<br>", unsafe_allow_html=True) # 增加一点呼吸感
-                
-                # 使用两列布局，左侧大数字，右侧小指标
-                main_col1, main_col2 = st.columns([1.8, 1])
-                
-                main_col1.metric(
-                    "今日家庭收益 (元)", 
-                    f"{total_profit:+.2f}", 
-                    delta=f"{total_profit:+.2f}"
-                )
-                
-                yield_rate = (total_profit/total_principal*100) if total_principal > 0 else 0
-                main_col2.metric(
-                    "收益率", 
-                    f"{yield_rate:+.2f}%",
-                    delta_color="normal" # 收益率保持默认颜色，不抢眼
-                )
-                
+                # 1. 💰 总盈亏
                 st.markdown("<br>", unsafe_allow_html=True)
-
+                main_col1, main_col2 = st.columns([1.8, 1])
+                main_col1.metric("今日家庭收益 (元)", f"{total_profit:+.2f}", delta=f"{total_profit:+.2f}")
+                yield_rate = (total_profit/total_principal*100) if total_principal > 0 else 0
+                main_col2.metric("收益率", f"{yield_rate:+.2f}%")
+                
                 # 2. 🌸 持仓列表
-                st.markdown("<span style='color:#888; font-size:14px; margin-left:5px'>我的持仓</span>", unsafe_allow_html=True)
+                # 🔥 修改点2：缩小间距，只留一点点呼吸感
+                st.markdown("<div style='margin-bottom: 8px;'></div>", unsafe_allow_html=True)
+                st.markdown("<span style='color:#999; font-size:13px; margin-left:5px'>HOLDINGS</span>", unsafe_allow_html=True)
                 
                 for card in cards_data:
-                    # 动态Icon
-                    icon = "🔥" if card['est'] > 0 else "🍃" # 换成更有意境的图标
-                    
-                    # 标题设计：尽量用空格对齐，模拟表格感
+                    icon = "🔥" if card['est'] > 0 else "🍃"
                     title = f"{icon} {card['name']}　{card['est']:+.2f}%"
-                    
                     with st.expander(title):
-                        # 内部布局
                         kc1, kc2 = st.columns([1, 2])
-                        color_code = "#ff4d4f" if card['profit']>0 else "#52c41a" # 柔和红绿
-                        
+                        color_code = "#ff4d4f" if card['profit']>0 else "#52c41a"
                         kc1.markdown(f"""
                         <div style='background-color:#f9f9f9; padding:10px; border-radius:8px;'>
                             <small style='color:#999'>今日盈亏</small><br>
@@ -375,20 +339,20 @@ def main():
                             <span style='color:#555'>￥{card['principal']:,}</span>
                         </div>
                         """, unsafe_allow_html=True)
-                        
                         kc2.table(card['stocks'])
 
-                # 3. 🌍 底部大盘 (极简注脚模式)
-                st.markdown("<br><br>", unsafe_allow_html=True)
+                # 3. 🌍 底部大盘
+                # 🔥 修改点3：恢复 st.metric，删除大空行，距离更紧凑
                 st.divider()
-                st.caption("🌍 Global Market Indices")
+                st.markdown("<span style='color:#999; font-size:13px; margin-left:5px'>MARKET INDICES</span>", unsafe_allow_html=True)
+                
                 mc1, mc2, mc3 = st.columns(3)
-                cols = [mc1, mc2, mc3]
+                m_cols = [mc1, mc2, mc3]
                 for i, code in enumerate(MARKET_INDICES):
                     d = market_data.get(code)
-                    if d: cols[i].metric(MARKET_INDICES[code], f"{d['change']:.2f}%", label_visibility="collapsed") # 隐藏标题，只显示名字在值里? 不，label_collapsed会隐藏标题。
-                    # 修正：保持简约
-                    # cols[i].markdown(f"**{MARKET_INDICES[code]}**: {d['change']:.2f}%") 
+                    if d: 
+                        # 使用原生的 Metric，直观清晰
+                        m_cols[i].metric(MARKET_INDICES[code], f"{d['change']:.2f}%")
 
             time.sleep(30)
 
