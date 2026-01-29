@@ -1,17 +1,16 @@
 import streamlit as st
 import requests
 import time
-from datetime import datetime
+from datetime import datetime, timedelta # 👈 新增 timedelta
 
 # === ⚙️ 配置区域 ===
-# Streamlit 页面配置
 st.set_page_config(
     page_title="全域鹰眼监控",
     page_icon="🦅",
-    layout="centered" # 手机端友好模式
+    layout="centered"
 )
 
-# === 🔥 核心配置 (你的配置已完全保留) ===
+# === 🔥 核心配置 ===
 MY_FUNDS_CONFIG = {
     '摩根均衡C (梁鹏/周期)': {
         'factor': 0.83, 
@@ -72,7 +71,7 @@ def get_realtime_price(stock_codes):
     codes_str = ",".join(stock_codes)
     url = f"http://qt.gtimg.cn/q={codes_str}"
     try:
-        r = requests.get(url, timeout=3) # 云端网络好，超时设短点
+        r = requests.get(url, timeout=3)
         text = r.text
     except:
         return None
@@ -87,7 +86,6 @@ def get_realtime_price(stock_codes):
                 data = part.split('="')[1].strip('"').split('~')
                 if len(data) > 30:
                     name = data[1]
-                    # 腾讯接口有时候名字会有空格，去掉
                     name = name.replace(" ", "")
                     current = float(data[3])
                     close = float(data[4])
@@ -103,10 +101,8 @@ def get_realtime_price(stock_codes):
 def main():
     st.title("🦅 全域鹰眼监控 Pro+")
     
-    # 创建一个空的容器，用于动态刷新内容
     placeholder = st.empty()
     
-    # 提取代码列表
     all_codes = list(MARKET_INDICES.keys())
     for fund_data in MY_FUNDS_CONFIG.values():
         for stock in fund_data['holdings']:
@@ -114,7 +110,6 @@ def main():
     all_codes = list(set(all_codes))
 
     while True:
-        # 在容器内部渲染，这样每次循环会清除旧内容
         with placeholder.container():
             market_data = get_realtime_price(all_codes)
             
@@ -122,11 +117,14 @@ def main():
                 st.warning("正在连接数据源...")
                 time.sleep(2)
                 continue
-                
-            current_time = datetime.now().strftime('%H:%M:%S')
-            st.caption(f"最后刷新: {current_time} (30秒自动刷新)")
             
-            # 1. 大盘看板 (使用漂亮的指标组件)
+            # 🔥【修正点】UTC时间 + 8小时 = 北京时间
+            bj_time = datetime.utcnow() + timedelta(hours=8)
+            current_time = bj_time.strftime('%H:%M:%S')
+            
+            st.caption(f"最后刷新: {current_time} (北京时间 | 30秒自动刷新)")
+            
+            # 1. 大盘看板
             st.subheader("📈 市场风向")
             col1, col2, col3 = st.columns(3)
             
@@ -137,7 +135,6 @@ def main():
                 name = MARKET_INDICES[code]
                 info = market_data.get(code)
                 if info:
-                    # Streamlit 会自动根据正负值显示红色/绿色
                     cols[i].metric(label=name, value=f"{info['change']:.2f}%")
             
             st.divider()
@@ -160,12 +157,10 @@ def main():
                     raw_est = total_weighted_change / total_weight
                     corrected_est = raw_est * factor
                     
-                    # 只有这里需要自己写颜色逻辑
                     color = "red" if corrected_est > 0 else "green"
                     emoji = "🔥" if corrected_est > 0 else "❄️"
                     
-                    # 使用 expander (折叠卡片) 让界面更整洁
-                    # 如果涨跌幅绝对值超过 1.5%，默认展开，否则折叠
+                    # 🔥【智能展开逻辑】波动 > 1.5% 自动展开
                     is_expanded = abs(corrected_est) > 1.5
                     
                     with st.expander(f"{emoji} {fund_name.split('(')[0]}  |  {corrected_est:+.2f}%", expanded=is_expanded):
@@ -176,9 +171,9 @@ def main():
                         elif corrected_est < -2.0:
                             st.success("💡 提示：黄金坑，考虑补仓")
                             
-                        # 显示持仓前五 (用表格更清晰)
+                        # 显示持仓前五
                         top_stocks = []
-                        for s in holdings[:5]: # 只看前5个
+                        for s in holdings[:5]:
                             s_info = market_data.get(s['code'])
                             if s_info:
                                 top_stocks.append({
@@ -187,7 +182,6 @@ def main():
                                 })
                         st.table(top_stocks)
 
-        # 暂停 30 秒 (Streamlit 会在这期间保持页面静止)
         time.sleep(30)
 
 if __name__ == "__main__":
