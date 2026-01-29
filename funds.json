@@ -1,6 +1,7 @@
 {
     "摩根均衡C (梁鹏/周期)": {
         "factor": 0.83,
+        "holding_value":460000,
         "holdings": [
             {"code": "sz000683", "name": "博源化工", "weight": 8.81},
             {"code": "sz002714", "name": "牧原股份", "weight": 8.72},
@@ -16,6 +17,7 @@
     },
     "泰康新锐C (韩庆/成长)": {
         "factor": 0.77,
+        "holding_value":100000,
         "holdings": [
             {"code": "sz002371", "name": "北方华创", "weight": 5.55},
             {"code": "hk00700", "name": "腾讯控股", "weight": 5.02},
@@ -31,6 +33,7 @@
     },
     "财通优选C (金梓才/AI)": {
         "factor": 1.00,
+        "holding_value":230000,
         "holdings": [
             {"code": "sz300502", "name": "新 易 盛", "weight": 9.69},
             {"code": "sz301377", "name": "鼎泰高科", "weight": 9.64},
