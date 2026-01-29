@@ -17,11 +17,11 @@ st.set_page_config(
 # 注入 CSS：苹果风 + 毛玻璃 + 极光背景
 st.markdown("""
     <style>
-    /* 1. 全局极光背景 (让毛玻璃显形的背景) */
+    /* 1. 全局极光背景 */
     .stApp {
         background: radial-gradient(circle at 10% 20%, rgba(255, 230, 240, 0.4) 0%, rgba(255, 255, 255, 0) 40%),
                     radial-gradient(circle at 90% 80%, rgba(230, 240, 255, 0.4) 0%, rgba(255, 255, 255, 0) 40%),
-                    #fdfdfd; /* 兜底白色 */
+                    #fdfdfd;
         font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Helvetica Neue", Helvetica, Arial, sans-serif;
     }
     
@@ -32,12 +32,12 @@ st.markdown("""
     footer {visibility: hidden;}
     header {visibility: hidden;}
     
-    /* 3. Settings 按钮 (胶囊风) */
+    /* 3. Settings 按钮 */
     div[data-testid="stPopover"] > button {
         border-radius: 20px;
         border: 1px solid rgba(255, 255, 255, 0.6);
         background-color: rgba(255, 255, 255, 0.5);
-        backdrop-filter: blur(10px); /* 毛玻璃 */
+        backdrop-filter: blur(10px);
         color: #888;
         font-size: 13px;
         padding: 4px 12px;
@@ -50,15 +50,15 @@ st.markdown("""
         transform: scale(1.02);
     }
 
-    /* 4. 收益率大卡片 (毛玻璃化) */
+    /* 4. 收益率大卡片 */
     div[data-testid="stMetric"] {
-        background: rgba(255, 255, 255, 0.65); /* 半透明白 */
-        backdrop-filter: blur(16px);            /* 强模糊 */
+        background: rgba(255, 255, 255, 0.65);
+        backdrop-filter: blur(16px);
         -webkit-backdrop-filter: blur(16px);
-        border: 1px solid rgba(255, 255, 255, 0.6); /* 玻璃边框 */
+        border: 1px solid rgba(255, 255, 255, 0.6);
         padding: 15px 20px;
-        border-radius: 20px; /* 更大的圆角 */
-        box-shadow: 0 8px 32px rgba(31, 38, 135, 0.05); /* 柔光投影 */
+        border-radius: 20px;
+        box-shadow: 0 8px 32px rgba(31, 38, 135, 0.05);
         min-height: 115px !important; 
         max-height: 115px !important;
         display: flex;
@@ -72,7 +72,7 @@ st.markdown("""
         letter-spacing: 0.5px;
     }
     
-    /* 5. 基金卡片容器 (Expander) */
+    /* 5. 基金卡片容器 */
     .streamlit-expanderHeader {
         background-color: rgba(255, 255, 255, 0.7) !important;
         border-radius: 16px;
@@ -85,58 +85,64 @@ st.markdown("""
         border: none;
         box-shadow: 0 8px 24px rgba(0,0,0,0.04);
         border-radius: 16px;
-        background-color: rgba(255, 255, 255, 0.5); /* 容器本身也半透明 */
+        background-color: rgba(255, 255, 255, 0.5);
         backdrop-filter: blur(10px);
         margin-bottom: 15px;
-        overflow: hidden; /* 防止内容溢出圆角 */
+        overflow: hidden;
     }
     div[data-testid="stExpanderDetails"] {
-        background-color: rgba(255, 255, 255, 0.4); /* 展开后的背景 */
+        background-color: rgba(255, 255, 255, 0.4);
+        padding-top: 0px !important; /* 修正顶部间距 */
     }
 
-    /* 6. 🔥 iOS 风格持仓列表 (取代旧表格) */
+    /* 6. 🔥 iOS 列表核心样式 (Flexbox) */
     .ios-list-container {
-        padding: 0 5px;
+        display: flex;
+        flex-direction: column;
+        width: 100%;
     }
     .ios-row {
         display: flex;
         align-items: center;
         justify-content: space-between;
-        padding: 12px 0;
-        border-bottom: 1px solid rgba(0,0,0,0.05); /* 极细的分隔线 */
+        padding: 10px 0;
+        border-bottom: 1px solid rgba(0,0,0,0.06);
+        width: 100%;
     }
     .ios-row:last-child {
         border-bottom: none;
     }
     
-    /* 序号 */
     .ios-index {
         font-size: 12px;
-        color: #bbb;
-        width: 25px;
+        color: #aaa;
+        width: 24px;
         font-weight: 600;
+        margin-right: 8px;
     }
     
-    /* 股票名 */
     .ios-name {
-        font-size: 15px;
+        font-size: 14px;
         color: #333;
         font-weight: 500;
-        flex-grow: 1; /* 撑开中间空间 */
+        flex: 1; /* 自动撑开 */
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        margin-right: 10px;
     }
     
-    /* 涨跌胶囊 */
     .ios-pill {
         padding: 4px 10px;
-        border-radius: 8px;
+        border-radius: 6px;
         font-size: 13px;
         font-weight: 600;
-        min-width: 70px;
+        min-width: 65px;
         text-align: right;
-        /* 默认样式，会被内联样式覆盖 */
+        font-family: -apple-system, BlinkMacSystemFont, sans-serif;
     }
     
-    /* 左侧详情区美化 */
+    /* 左侧详情区 */
     .detail-box {
         background: rgba(255,255,255,0.6);
         padding: 15px;
@@ -340,7 +346,7 @@ def main():
                 if fh: st.line_chart(pd.DataFrame.from_dict(fh, orient='index').sort_index())
 
     # ==========================================
-    # 👇 主展示区 (Apple Glass Mode)
+    # 👇 主展示区 (Apple Glass Mode - Fixed)
     # ==========================================
     if mode == "📡 实时看板":
         placeholder = st.empty()
@@ -387,12 +393,11 @@ def main():
                         "stocks": stocks
                     })
                 
-                # 1. 💰 总盈亏 (高度强制对齐)
+                # 1. 💰 总盈亏
                 st.markdown("<br>", unsafe_allow_html=True)
                 main_col1, main_col2 = st.columns([1.8, 1])
                 
                 main_col1.metric("今日家庭收益 (元)", f"{total_profit:+.2f}", delta=f"{total_profit:+.2f}")
-                
                 yield_rate = (total_profit/total_principal*100) if total_principal > 0 else 0
                 main_col2.metric("收益率", f"{yield_rate:+.2f}%", delta_color="normal")
                 
@@ -401,7 +406,6 @@ def main():
                 st.markdown("<span style='color:#999; font-size:12px; letter-spacing:1px; margin-left:2px; font-weight:500'>PORTFOLIO</span>", unsafe_allow_html=True)
                 
                 for card in cards_data:
-                    # 图标逻辑
                     icon = "👑" if card['est'] > 0 else "📿"
                     title = f"{icon} {card['name']}　{card['est']:+.2f}%"
                     
@@ -420,25 +424,14 @@ def main():
                         </div>
                         """, unsafe_allow_html=True)
                         
-                        # 右侧：🔥 iOS 列表风格 (取代 Excel 表格)
-                        # 这里我们用 div + flexbox 模拟苹果的列表
+                        # 右侧：🔥 修复代码块乱码问题
+                        # 解决方法：在 Python 中紧凑拼接 HTML，不带缩进，避免 Markdown 误判为代码块
                         list_html = "<div class='ios-list-container'>"
                         for i, s in enumerate(card['stocks']):
-                            # 涨跌胶囊颜色
-                            if s['pct'] > 0:
-                                bg_color = "#ff3b30"; txt_color = "white"
-                            elif s['pct'] < 0:
-                                bg_color = "#34c759"; txt_color = "white"
-                            else:
-                                bg_color = "#8e8e93"; txt_color = "white"
-                            
-                            list_html += f"""
-                            <div class='ios-row'>
-                                <div class='ios-index'>{i+1}</div>
-                                <div class='ios-name'>{s['name']}</div>
-                                <div class='ios-pill' style='background-color:{bg_color}; color:{txt_color}'>{s['pct']:+.2f}%</div>
-                            </div>
-                            """
+                            bg_color = "#ff3b30" if s['pct'] > 0 else ("#34c759" if s['pct'] < 0 else "#8e8e93")
+                            txt_color = "white"
+                            # 单行拼接，无换行符，无空格缩进
+                            list_html += f"<div class='ios-row'><div class='ios-index'>{i+1}</div><div class='ios-name'>{s['name']}</div><div class='ios-pill' style='background-color:{bg_color}; color:{txt_color}'>{s['pct']:+.2f}%</div></div>"
                         list_html += "</div>"
                         
                         kc2.markdown(list_html, unsafe_allow_html=True)
