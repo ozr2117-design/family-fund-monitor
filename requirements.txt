@@ -1,3 +1,4 @@
 requests
 streamlit
 PyGithub
+pandas
