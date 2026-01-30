@@ -8,7 +8,6 @@ from datetime import datetime, timedelta
 # ==========================================
 BARK_URLS = [
     "https://api.day.app/8BTBArkBatQQdF39JpsBDg/推送标题/基金到买点啦！/",   # 📱 你的手机 (保留最后的斜杠)
-    "https://api.day.app/你的Key2/"    # 📱 妻子的手机
 ]
 
 # ==========================================
