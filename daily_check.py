@@ -78,7 +78,7 @@ def main():
 
         # --- 信号判断逻辑 (和 V5.0 保持一致) ---
         # 🎯 买入信号
-        if est < -2.5 and est < bench_val:
+        if est < 100 and est < bench_val:
             base_unit = info.get('base_unit', 1000)
             multiplier = 2 if est < -4.0 else 1
             buy_amt = base_unit * multiplier
