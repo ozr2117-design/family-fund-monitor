@@ -6,7 +6,7 @@ import pandas as pd
 from datetime import datetime, timedelta
 from github import Github
 
-# === 🎨 1. 页面配置与 CSS 魔法 (iOS Control Center) ===
+# === 🎨 1. 页面配置与 CSS 魔法 (V4.6 信号猎手) ===
 st.set_page_config(
     page_title="Family Wealth",
     page_icon="💎",
@@ -14,7 +14,7 @@ st.set_page_config(
     initial_sidebar_state="collapsed"
 )
 
-# 注入 CSS：全局美化 + 菜单深度定制
+# 注入 CSS
 st.markdown("""
     <style>
     /* 1. 全局极光背景 */
@@ -32,7 +32,7 @@ st.markdown("""
     footer {visibility: hidden;}
     header {visibility: hidden;}
     
-    /* 3. Settings 按钮 (右上角胶囊) */
+    /* 3. Settings 按钮 */
     div[data-testid="stPopover"] > button {
         border-radius: 20px;
         border: 1px solid rgba(255, 255, 255, 0.6);
@@ -46,15 +46,13 @@ st.markdown("""
     }
     div[data-testid="stPopover"] > button:hover {
         background-color: #fff;
-        color: #007aff; /* iOS Blue */
+        color: #007aff;
         transform: scale(1.02);
         box-shadow: 0 4px 12px rgba(0,122,255,0.15);
         border-color: #007aff;
     }
 
-    /* 4. 🔥 核心：改造 Popover 内部样式 (iOS控制中心风格) */
-    
-    /* 弹出层背景毛玻璃化 */
+    /* 4. Popover 内部美化 */
     div[data-testid="stPopoverBody"] {
         background-color: rgba(255, 255, 255, 0.85);
         backdrop-filter: blur(20px);
@@ -62,13 +60,7 @@ st.markdown("""
         border: 1px solid rgba(255,255,255,0.5);
         padding: 15px !important;
     }
-
-    /* 隐藏 Radio 的原始圆圈 */
-    div[role="radiogroup"] label > div:first-child {
-        display: none !important;
-    }
-
-    /* 将 Radio 选项改造成 iOS 列表项 */
+    div[role="radiogroup"] label > div:first-child { display: none !important; }
     div[role="radiogroup"] label {
         background-color: rgba(255, 255, 255, 0.6);
         padding: 12px 15px !important;
@@ -76,24 +68,10 @@ st.markdown("""
         margin-bottom: 8px !important;
         border: 1px solid rgba(0,0,0,0.05);
         transition: all 0.2s ease;
-        display: flex;
-        width: 100%;
-        color: #444;
+        display: flex; width: 100%; color: #444;
     }
-    
-    /* 悬浮效果 */
-    div[role="radiogroup"] label:hover {
-        background-color: #f5f5f7;
-        transform: translateX(2px);
-    }
-
-    /* 选中状态 (Streamlit 会给选中的 label 加 data-checked 属性吗？很难定位)
-       这里我们用一点 CSS trick，虽然不能完美改变背景色，但可以优化文字 */
-    div[role="radiogroup"] [data-testid="stMarkdownContainer"] p {
-        font-size: 14px;
-        font-weight: 500;
-        margin: 0;
-    }
+    div[role="radiogroup"] label:hover { background-color: #f5f5f7; transform: translateX(2px); }
+    div[role="radiogroup"] [data-testid="stMarkdownContainer"] p { font-size: 14px; font-weight: 500; margin: 0; }
 
     /* 5. 收益率大卡片 */
     div[data-testid="stMetric"] {
@@ -120,24 +98,27 @@ st.markdown("""
         margin-bottom: 15px;
         overflow: hidden;
     }
-    .ios-list-container {
-        display: flex;
-        flex-direction: column;
-        width: 100%;
-    }
-    .ios-row {
-        display: flex;
-        align-items: center;
-        justify-content: space-between;
-        padding: 10px 0;
-        border-bottom: 1px solid rgba(0,0,0,0.06);
-        width: 100%;
-    }
+    .ios-list-container { display: flex; flex-direction: column; width: 100%; }
+    .ios-row { display: flex; align-items: center; justify-content: space-between; padding: 10px 0; border-bottom: 1px solid rgba(0,0,0,0.06); width: 100%; }
     .ios-row:last-child { border-bottom: none; }
     .ios-index { font-size: 12px; color: #aaa; width: 24px; font-weight: 600; margin-right: 8px; }
     .ios-name { font-size: 14px; color: #333; font-weight: 500; flex: 1; margin-right: 10px; }
     .ios-pill { padding: 4px 10px; border-radius: 6px; font-size: 13px; font-weight: 600; min-width: 65px; text-align: right; color: white; font-family: -apple-system; }
     .detail-box { background: rgba(255,255,255,0.6); padding: 15px; border-radius: 12px; border: 1px solid rgba(255,255,255,0.4); }
+    
+    /* 🔥 信号提示样式 */
+    .signal-box {
+        background-color: #fff1f0;
+        border: 1px solid #ffa39e;
+        color: #cf1322;
+        padding: 8px 12px;
+        border-radius: 8px;
+        font-size: 13px;
+        font-weight: 500;
+        margin-bottom: 15px;
+        display: flex;
+        align-items: center;
+    }
     </style>
 """, unsafe_allow_html=True)
 
@@ -153,6 +134,16 @@ FUND_CODES_MAP = {
     '泰康新锐C (韩庆/成长)': '009340',
     '财通优选C (金梓才/AI)': '009354'
 }
+
+# === 🛠️ 辅助逻辑：智能匹配基准 ===
+def get_benchmark_code(fund_name):
+    """根据基金名字猜测它应该对标哪个指数"""
+    if "周期" in fund_name or "均衡" in fund_name:
+        return 'sh000001', '上证' # 周期股看上证
+    elif "成长" in fund_name or "AI" in fund_name or "优选" in fund_name:
+        return 'sz399006', '创指' # 成长股看创业板
+    else:
+        return 'sh000001', '上证' # 默认
 
 # === 🛠️ GitHub 数据库操作 ===
 
@@ -259,40 +250,15 @@ def main():
         st.markdown(f"<h2 style='margin-top:-10px; color:#333; letter-spacing:0.5px; font-weight:300'>Family Wealth</h2>", unsafe_allow_html=True)
 
     with top_col2:
-        # 🔥 Popover 内容重构：更扁平，更优雅
         with st.popover("⚙️ Settings", use_container_width=True):
-            
-            # 使用 Caption 分组，增加层次感
             st.caption("Views")
-            
-            # 🔥 这里的 emoji 被我用来当做图标
-            # radio 已经被 CSS 爆改成 列表菜单了
-            mode = st.radio(
-                "Navigation", 
-                ["📡  实时看板", "💰  持仓管理"], 
-                label_visibility="collapsed",
-                key="nav_radio"
-            )
-            
-            st.markdown("<div style='height:10px'></div>", unsafe_allow_html=True) # 增加间距
+            mode = st.radio("Navigation", ["📡  实时看板", "💰  持仓管理"], label_visibility="collapsed", key="nav_radio")
+            st.markdown("<div style='height:10px'></div>", unsafe_allow_html=True)
             st.caption("Actions")
-            
-            # 这是一个技巧：把 Actions 和 Views 放在同一个 radio 里逻辑会乱
-            # 所以 Actions 我们保留为 radio 的选项，但在下面处理
-            action_mode = st.radio(
-                "Tools", 
-                ["💾  收盘存证", "⚖️  晚间审计"], 
-                label_visibility="collapsed",
-                index=None, # 默认不选中
-                key="action_radio"
-            )
+            action_mode = st.radio("Tools", ["💾  收盘存证", "⚖️  晚间审计"], label_visibility="collapsed", index=None, key="action_radio")
 
-            # --- 逻辑分发 ---
-            
-            # 如果点击了下方的 Action，优先处理 Action
             current_selection = action_mode if action_mode else mode
 
-            # 💰 持仓管理
             if current_selection == "💰  持仓管理":
                 st.divider()
                 st.info("Modify Holdings Amount")
@@ -303,14 +269,12 @@ def main():
                         short_name = name.split('(')[0]
                         new_val = st.number_input(short_name, value=float(current_val), step=100.0)
                         new_holdings[name] = new_val
-                    
                     if st.form_submit_button("Save Changes"):
                         for name, val in new_holdings.items(): funds_config[name]['holding_value'] = val
                         save_json('funds.json', funds_config, config_sha, "Update Holdings")
                         st.toast("Updated Successfully!")
                         time.sleep(1); st.rerun()
 
-            # 💾 收盘存证
             elif current_selection == "💾  收盘存证":
                 st.divider()
                 if st.button("📸 Run Snapshot", type="primary", use_container_width=True):
@@ -333,7 +297,6 @@ def main():
                             save_json('history.json', history, hist_sha, f"Snapshot {today_str}")
                             st.success(f"Snapshot Saved: {today_str}")
 
-            # ⚖️ 晚间审计
             elif current_selection == "⚖️  晚间审计":
                 st.divider()
                 if st.button("🚀 Start Audit", type="primary", use_container_width=True):
@@ -368,10 +331,8 @@ def main():
                 if fh: st.line_chart(pd.DataFrame.from_dict(fh, orient='index').sort_index())
 
     # ==========================================
-    # 👇 主展示区 (Focus Mode)
+    # 👇 主展示区 (智能信号版)
     # ==========================================
-    # 只要不是在做 "持仓管理"，都显示主看板
-    # 这样用户点开设置看一眼，不用切换模式，背景还是好看的主页
     if "持仓管理" not in str(mode) and "持仓管理" not in str(action_mode):
         placeholder = st.empty()
         
@@ -389,6 +350,7 @@ def main():
                 total_profit = 0
                 total_principal = 0
                 cards_data = []
+                signal_triggered = False # 用于控制 Toast 弹窗
                 
                 for name, info in funds_config.items():
                     factor = info.get('factor', 1.0)
@@ -399,28 +361,45 @@ def main():
                         if d:
                             val += d['change'] * s['weight']; w += s['weight']
                             if len(stocks) < 3: 
-                                stocks.append({
-                                    "name": d['name'], 
-                                    "pct": d['change']
-                                })
+                                stocks.append({"name": d['name'], "pct": d['change']})
                     
                     est = (val / w * factor) if w > 0 else 0
                     profit = principal * est / 100
                     total_profit += profit
                     total_principal += principal
                     
+                    # 🔥 智能信号核心逻辑
+                    bench_code, bench_name = get_benchmark_code(name)
+                    bench_val = 0
+                    if bench_code in market_data:
+                        bench_val = market_data[bench_code]['change']
+                    
+                    # 信号判断：估值 < -2.5% 且 跑输基准
+                    is_oversold = False
+                    alpha = 0
+                    if est < -2.5 and est < bench_val:
+                        is_oversold = True
+                        alpha = est - bench_val # 负超额
+                        signal_triggered = True
+
                     cards_data.append({
                         "name": name.split('(')[0],
                         "est": est,
                         "profit": profit,
                         "principal": principal,
-                        "stocks": stocks
+                        "stocks": stocks,
+                        "is_oversold": is_oversold,
+                        "alpha": alpha,
+                        "bench_name": bench_name
                     })
                 
+                # Toast 提示 (仅在触发信号时)
+                if signal_triggered:
+                    st.toast("⚠️ 检测到超跌买入机会！", icon="📉")
+
                 # 1. 💰 总盈亏
                 st.markdown("<br>", unsafe_allow_html=True)
                 main_col1, main_col2 = st.columns([1.8, 1])
-                
                 main_col1.metric("今日家庭收益 (元)", f"{total_profit:+.2f}", delta=f"{total_profit:+.2f}")
                 yield_rate = (total_profit/total_principal*100) if total_principal > 0 else 0
                 main_col2.metric("收益率", f"{yield_rate:+.2f}%", delta_color="normal")
@@ -431,9 +410,23 @@ def main():
                 
                 for card in cards_data:
                     icon = "👑" if card['est'] > 0 else "📿"
-                    title = f"{icon} {card['name']}　{card['est']:+.2f}%"
+                    
+                    # 🔥 如果触发信号，标题加特殊标记
+                    title_suffix = f" {card['est']:+.2f}%"
+                    if card['is_oversold']:
+                        title_suffix += " 🎯 机会"
+                    
+                    title = f"{icon} {card['name']}{title_suffix}"
                     
                     with st.expander(title):
+                        # 🔥 信号提示条
+                        if card['is_oversold']:
+                            st.markdown(f"""
+                            <div class='signal-box'>
+                                📉 触发超跌信号：跌幅超 2.5% 且跑输 {card['bench_name']} {abs(card['alpha']):.2f}%
+                            </div>
+                            """, unsafe_allow_html=True)
+
                         kc1, kc2 = st.columns([1.1, 2])
                         color_code = "#ff3b30" if card['profit']>0 else "#34c759"
                         kc1.markdown(f"""
