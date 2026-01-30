@@ -7,7 +7,8 @@ from datetime import datetime, timedelta
 # ⚙️ 配置区 (请在这里填入你们两台手机的 Bark 链接)
 # ==========================================
 BARK_URLS = [
-    "https://api.day.app/8BTBArkBatQQdF39JpsBDg/推送标题/基金到买点啦！/",   # 📱 你的手机 (保留最后的斜杠)
+    "https://api.day.app/8BTBArkBatQQdF39JpsBDg/重要警告?level=critical&volume=5/",   # 📱 你的手机 (保留最后的斜杠)
+    "https://api.day.app/8BTBArkBatQQdF39JpsBDg/推送标题/这里改成你自己的推送内容/"    # 📱 妻子的手机
 ]
 
 # ==========================================
