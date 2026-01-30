@@ -1,6 +1,6 @@
 {
     "摩根均衡C (梁鹏/周期)": {
-        "factor": 0.83,
+        "factor": 1.0,
         "holding_value": 460000,
         "holdings": [
             {
@@ -56,7 +56,7 @@
         ]
     },
     "泰康新锐C (韩庆/成长)": {
-        "factor": 0.77,
+        "factor": 1.0,
         "holding_value": 100000,
         "holdings": [
             {
@@ -112,7 +112,7 @@
         ]
     },
     "财通优选C (金梓才/AI)": {
-        "factor": 0.7959,
+        "factor": 1.0,
         "holding_value": 230000,
         "holdings": [
             {
