@@ -4,9 +4,11 @@ import os
 from datetime import datetime, timedelta
 
 # === ⚙️ 配置区 ===
-# 换成你的 Bark 链接 (如果是 PushPlus，逻辑类似)
-# 格式: https://api.day.app/你的Key/推送标题/推送内容
-BARK_URL = "https://api.day.app/8BTBArkBatQQdF39JpsBDg/推送标题/基金到买点啦！！！！！！！！！！！！！" 
+# 把原来的 BARK_URL 删掉，换成下面这个列表 BARK_URLS
+BARK_URLS = [
+    "https://api.day.app/8BTBArkBatQQdF39JpsBDg/重要警告?level=critical&volume=5",  # 你的手机
+    "https://api.day.app/你的Key2/"   # 你妻子的手机
+] 
 
 # 基金配置 (为了简单，这里直接读取本地 funds.json，或者你把 json 内容硬编码在这里)
 # 在 GitHub Actions 里，它能读取到仓库里的 funds.json
