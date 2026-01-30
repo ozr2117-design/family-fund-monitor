@@ -6,7 +6,7 @@ import pandas as pd
 from datetime import datetime, timedelta
 from github import Github
 
-# === 🎨 1. 页面配置与 CSS 魔法 (Apple Glassmorphism V5.0) ===
+# === 🎨 1. 页面配置与 CSS 魔法 (Apple Glassmorphism V5.1) ===
 st.set_page_config(
     page_title="Family Wealth",
     page_icon="💎",
@@ -14,7 +14,7 @@ st.set_page_config(
     initial_sidebar_state="collapsed"
 )
 
-# 注入 CSS：极光背景 + 信号卡片样式
+# 注入 CSS：极光背景 + 信号卡片 + 禅模式样式
 st.markdown("""
     <style>
     /* 1. 全局极光背景 */
@@ -262,8 +262,16 @@ def main():
         st.caption(f"{greeting} | {bj_time.strftime('%m-%d %H:%M')}")
         st.markdown(f"<h2 style='margin-top:-10px; color:#333; letter-spacing:0.5px; font-weight:300'>Family Wealth</h2>", unsafe_allow_html=True)
 
+    # 🔥 禅模式状态初始化 (默认关闭)
+    zen_mode = False
+
     with top_col2:
         with st.popover("⚙️ Settings", use_container_width=True):
+            st.caption("Mode")
+            # 🔥 禅模式开关
+            zen_mode = st.toggle("🧘 禅模式 (隐藏金额)", value=False)
+            st.markdown("<div style='height:10px'></div>", unsafe_allow_html=True)
+
             st.caption("Views")
             mode = st.radio("Navigation", ["📡  实时看板", "💰  持仓管理"], label_visibility="collapsed", key="nav_radio")
             st.markdown("<div style='height:10px'></div>", unsafe_allow_html=True)
@@ -272,7 +280,7 @@ def main():
 
             current_selection = action_mode if action_mode else mode
 
-            # 💰 持仓管理 (升级版：增加基准买入金额设置)
+            # 💰 持仓管理
             if current_selection == "💰  持仓管理":
                 st.divider()
                 st.info("Manage Holdings & Strategy")
@@ -285,12 +293,10 @@ def main():
                         st.markdown(f"**{short_name}**")
                         col_h1, col_h2 = st.columns(2)
                         
-                        # 1. 持仓金额
                         current_val = info.get('holding_value', 0)
                         val_h = col_h1.number_input(f"持仓 (¥)", value=float(current_val), step=100.0, key=f"h_{name}")
                         
-                        # 2. 🔥 基准买入金额 (Base Unit)
-                        current_base = info.get('base_unit', 1000) # 默认1000
+                        current_base = info.get('base_unit', 1000)
                         val_b = col_h2.number_input(f"单次加仓 (¥)", value=float(current_base), step=100.0, key=f"b_{name}")
                         
                         new_holdings[name] = val_h
@@ -361,7 +367,7 @@ def main():
                 if fh: st.line_chart(pd.DataFrame.from_dict(fh, orient='index').sort_index())
 
     # ==========================================
-    # 👇 主展示区 (全域火控版)
+    # 👇 主展示区 (全域火控版 + 禅模式)
     # ==========================================
     if "持仓管理" not in str(mode) and "持仓管理" not in str(action_mode):
         placeholder = st.empty()
@@ -385,7 +391,7 @@ def main():
                 for name, info in funds_config.items():
                     factor = info.get('factor', 1.0)
                     principal = info.get('holding_value', 0)
-                    base_unit = info.get('base_unit', 1000) # 🔥 获取基准买入额
+                    base_unit = info.get('base_unit', 1000) 
                     
                     val = 0; w = 0; stocks = []
                     for s in info['holdings']:
@@ -400,31 +406,26 @@ def main():
                     total_profit += profit
                     total_principal += principal
                     
-                    # 🔥 智能信号核心逻辑 (含止盈 & 止损)
+                    # 信号逻辑
                     bench_code, bench_name = get_benchmark_code(name)
                     bench_val = 0
                     if bench_code in market_data: bench_val = market_data[bench_code]['change']
                     
-                    signal_type = None # "BUY" or "SELL"
+                    signal_type = None 
                     signal_desc = ""
                     action_advice = ""
                     
-                    # 1. 🎯 机会信号 (买入)
-                    # 逻辑：跌幅深 (-2.5%) 且 跑输大盘
+                    # 1. 🎯 买入
                     if est < -2.5 and est < bench_val:
                         signal_type = "BUY"
-                        
-                        # 金字塔加仓逻辑
-                        multiplier = 1
-                        if est < -4.0: multiplier = 2 # 暴跌时刻买两份
-                        
+                        multiplier = 2 if est < -4.0 else 1
                         buy_amt = base_unit * multiplier
                         signal_desc = f"超跌错杀：跑输{bench_name} {abs(est-bench_val):.1f}%"
+                        # 禅模式下也建议显示具体加仓金额，因为这是指令，不是盈亏
                         action_advice = f"建议加仓: +¥{buy_amt:,}"
                         if not signal_msg: signal_msg = "🎯 出现加仓机会"
 
-                    # 2. 🔥 止盈信号 (卖出)
-                    # 逻辑：涨幅大 (3.0%) 且 跑赢大盘 (1.5%) -> 只有疯涨才提示，普通涨不提示
+                    # 2. 🔥 止盈
                     elif est > 3.0 and est > (bench_val + 1.5):
                         signal_type = "SELL"
                         signal_desc = f"短期过热：跑赢{bench_name} {abs(est-bench_val):.1f}%"
@@ -445,10 +446,15 @@ def main():
                 # Toast
                 if signal_msg: st.toast(signal_msg)
 
-                # 1. 💰 总盈亏
+                # 1. 💰 总盈亏 (禅模式屏蔽逻辑)
                 st.markdown("<br>", unsafe_allow_html=True)
                 main_col1, main_col2 = st.columns([1.8, 1])
-                main_col1.metric("今日家庭收益 (元)", f"{total_profit:+.2f}", delta=f"{total_profit:+.2f}")
+                
+                if zen_mode:
+                    main_col1.metric("今日家庭收益 (元)", "****", delta=None)
+                else:
+                    main_col1.metric("今日家庭收益 (元)", f"{total_profit:+.2f}", delta=f"{total_profit:+.2f}")
+                
                 yield_rate = (total_profit/total_principal*100) if total_principal > 0 else 0
                 main_col2.metric("收益率", f"{yield_rate:+.2f}%", delta_color="normal")
                 
@@ -459,7 +465,6 @@ def main():
                 for card in cards_data:
                     icon = "👑" if card['est'] > 0 else "📿"
                     
-                    # 🔥 标题动态化
                     title_suffix = f" {card['est']:+.2f}%"
                     if card['signal_type'] == "BUY": title_suffix += " 🎯 机会"
                     elif card['signal_type'] == "SELL": title_suffix += " 🔥 止盈"
@@ -467,35 +472,30 @@ def main():
                     title = f"{icon} {card['name']}{title_suffix}"
                     
                     with st.expander(title):
-                        # 🔥 信号提示区 (红/绿)
+                        # 信号区域 (不受禅模式影响，必须清晰)
                         if card['signal_type'] == "BUY":
-                            st.markdown(f"""
-                            <div class='signal-buy'>
-                                <div>
-                                    <div>🎯 {card['signal_desc']}</div>
-                                    <div style='font-size:15px; margin-top:4px'>👉 {card['action_advice']}</div>
-                                </div>
-                            </div>
-                            """, unsafe_allow_html=True)
+                            st.markdown(f"<div class='signal-buy'><div><div>🎯 {card['signal_desc']}</div><div style='font-size:15px; margin-top:4px'>👉 {card['action_advice']}</div></div></div>", unsafe_allow_html=True)
                         elif card['signal_type'] == "SELL":
-                            st.markdown(f"""
-                            <div class='signal-sell'>
-                                <div>
-                                    <div>🔥 {card['signal_desc']}</div>
-                                    <div style='font-size:15px; margin-top:4px'>👉 {card['action_advice']}</div>
-                                </div>
-                            </div>
-                            """, unsafe_allow_html=True)
+                            st.markdown(f"<div class='signal-sell'><div><div>🔥 {card['signal_desc']}</div><div style='font-size:15px; margin-top:4px'>👉 {card['action_advice']}</div></div></div>", unsafe_allow_html=True)
 
+                        # 详情数据 (禅模式屏蔽逻辑)
                         kc1, kc2 = st.columns([1.1, 2])
                         color_code = "#ff3b30" if card['profit']>0 else "#34c759"
+                        
+                        if zen_mode:
+                            profit_display = "<span style='color:#aaa'>****</span>"
+                            principal_display = "****"
+                        else:
+                            profit_display = f"￥{card['profit']:+.1f}"
+                            principal_display = f"￥{card['principal']:,}"
+                        
                         kc1.markdown(f"""
                         <div class='detail-box'>
                             <div style='font-size:12px; color:#888; margin-bottom:2px'>今日盈亏</div>
-                            <div style='font-size:20px; font-weight:600; color:{color_code}; font-family:-apple-system'>￥{card['profit']:+.1f}</div>
+                            <div style='font-size:20px; font-weight:600; color:{color_code}; font-family:-apple-system'>{profit_display}</div>
                             <div style='height:15px'></div>
                             <div style='font-size:12px; color:#888; margin-bottom:2px'>本金</div>
-                            <div style='font-size:16px; color:#333; font-weight:500'>￥{card['principal']:,}</div>
+                            <div style='font-size:16px; color:#333; font-weight:500'>{principal_display}</div>
                         </div>
                         """, unsafe_allow_html=True)
                         
