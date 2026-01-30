@@ -6,7 +6,7 @@ import pandas as pd
 from datetime import datetime, timedelta
 from github import Github
 
-# === 🎨 1. 页面配置与 CSS 魔法 (V4.6 信号猎手) ===
+# === 🎨 1. 页面配置与 CSS 魔法 (Apple Glassmorphism V5.0) ===
 st.set_page_config(
     page_title="Family Wealth",
     page_icon="💎",
@@ -14,7 +14,7 @@ st.set_page_config(
     initial_sidebar_state="collapsed"
 )
 
-# 注入 CSS
+# 注入 CSS：极光背景 + 信号卡片样式
 st.markdown("""
     <style>
     /* 1. 全局极光背景 */
@@ -54,7 +54,7 @@ st.markdown("""
 
     /* 4. Popover 内部美化 */
     div[data-testid="stPopoverBody"] {
-        background-color: rgba(255, 255, 255, 0.85);
+        background-color: rgba(255, 255, 255, 0.9);
         backdrop-filter: blur(20px);
         border-radius: 16px;
         border: 1px solid rgba(255,255,255,0.5);
@@ -106,18 +106,32 @@ st.markdown("""
     .ios-pill { padding: 4px 10px; border-radius: 6px; font-size: 13px; font-weight: 600; min-width: 65px; text-align: right; color: white; font-family: -apple-system; }
     .detail-box { background: rgba(255,255,255,0.6); padding: 15px; border-radius: 12px; border: 1px solid rgba(255,255,255,0.4); }
     
-    /* 🔥 信号提示样式 */
-    .signal-box {
-        background-color: #fff1f0;
-        border: 1px solid #ffa39e;
-        color: #cf1322;
-        padding: 8px 12px;
-        border-radius: 8px;
+    /* 🔥 信号提示卡片样式 */
+    .signal-buy {
+        background-color: #f6ffed;
+        border: 1px solid #b7eb8f;
+        color: #389e0d;
+        padding: 10px 14px;
+        border-radius: 10px;
         font-size: 13px;
-        font-weight: 500;
+        font-weight: 600;
         margin-bottom: 15px;
         display: flex;
         align-items: center;
+        box-shadow: 0 2px 6px rgba(56, 158, 13, 0.05);
+    }
+    .signal-sell {
+        background-color: #fff2f0;
+        border: 1px solid #ffccc7;
+        color: #cf1322;
+        padding: 10px 14px;
+        border-radius: 10px;
+        font-size: 13px;
+        font-weight: 600;
+        margin-bottom: 15px;
+        display: flex;
+        align-items: center;
+        box-shadow: 0 2px 6px rgba(207, 19, 34, 0.05);
     }
     </style>
 """, unsafe_allow_html=True)
@@ -137,13 +151,12 @@ FUND_CODES_MAP = {
 
 # === 🛠️ 辅助逻辑：智能匹配基准 ===
 def get_benchmark_code(fund_name):
-    """根据基金名字猜测它应该对标哪个指数"""
     if "周期" in fund_name or "均衡" in fund_name:
-        return 'sh000001', '上证' # 周期股看上证
+        return 'sh000001', '上证'
     elif "成长" in fund_name or "AI" in fund_name or "优选" in fund_name:
-        return 'sz399006', '创指' # 成长股看创业板
+        return 'sz399006', '创指'
     else:
-        return 'sh000001', '上证' # 默认
+        return 'sh000001', '上证'
 
 # === 🛠️ GitHub 数据库操作 ===
 
@@ -259,19 +272,36 @@ def main():
 
             current_selection = action_mode if action_mode else mode
 
+            # 💰 持仓管理 (升级版：增加基准买入金额设置)
             if current_selection == "💰  持仓管理":
                 st.divider()
-                st.info("Modify Holdings Amount")
+                st.info("Manage Holdings & Strategy")
                 with st.form("holding_form_pop"):
                     new_holdings = {}
+                    new_bases = {}
+                    
                     for name, info in funds_config.items():
-                        current_val = info.get('holding_value', 0)
                         short_name = name.split('(')[0]
-                        new_val = st.number_input(short_name, value=float(current_val), step=100.0)
-                        new_holdings[name] = new_val
+                        st.markdown(f"**{short_name}**")
+                        col_h1, col_h2 = st.columns(2)
+                        
+                        # 1. 持仓金额
+                        current_val = info.get('holding_value', 0)
+                        val_h = col_h1.number_input(f"持仓 (¥)", value=float(current_val), step=100.0, key=f"h_{name}")
+                        
+                        # 2. 🔥 基准买入金额 (Base Unit)
+                        current_base = info.get('base_unit', 1000) # 默认1000
+                        val_b = col_h2.number_input(f"单次加仓 (¥)", value=float(current_base), step=100.0, key=f"b_{name}")
+                        
+                        new_holdings[name] = val_h
+                        new_bases[name] = val_b
+                        st.divider()
+                    
                     if st.form_submit_button("Save Changes"):
-                        for name, val in new_holdings.items(): funds_config[name]['holding_value'] = val
-                        save_json('funds.json', funds_config, config_sha, "Update Holdings")
+                        for name in funds_config.keys():
+                            funds_config[name]['holding_value'] = new_holdings[name]
+                            funds_config[name]['base_unit'] = new_bases[name]
+                        save_json('funds.json', funds_config, config_sha, "Update Config")
                         st.toast("Updated Successfully!")
                         time.sleep(1); st.rerun()
 
@@ -331,7 +361,7 @@ def main():
                 if fh: st.line_chart(pd.DataFrame.from_dict(fh, orient='index').sort_index())
 
     # ==========================================
-    # 👇 主展示区 (智能信号版)
+    # 👇 主展示区 (全域火控版)
     # ==========================================
     if "持仓管理" not in str(mode) and "持仓管理" not in str(action_mode):
         placeholder = st.empty()
@@ -350,11 +380,13 @@ def main():
                 total_profit = 0
                 total_principal = 0
                 cards_data = []
-                signal_triggered = False # 用于控制 Toast 弹窗
+                signal_msg = None
                 
                 for name, info in funds_config.items():
                     factor = info.get('factor', 1.0)
                     principal = info.get('holding_value', 0)
+                    base_unit = info.get('base_unit', 1000) # 🔥 获取基准买入额
+                    
                     val = 0; w = 0; stocks = []
                     for s in info['holdings']:
                         d = market_data.get(s['code'])
@@ -368,19 +400,36 @@ def main():
                     total_profit += profit
                     total_principal += principal
                     
-                    # 🔥 智能信号核心逻辑
+                    # 🔥 智能信号核心逻辑 (含止盈 & 止损)
                     bench_code, bench_name = get_benchmark_code(name)
                     bench_val = 0
-                    if bench_code in market_data:
-                        bench_val = market_data[bench_code]['change']
+                    if bench_code in market_data: bench_val = market_data[bench_code]['change']
                     
-                    # 信号判断：估值 < -2.5% 且 跑输基准
-                    is_oversold = False
-                    alpha = 0
+                    signal_type = None # "BUY" or "SELL"
+                    signal_desc = ""
+                    action_advice = ""
+                    
+                    # 1. 🎯 机会信号 (买入)
+                    # 逻辑：跌幅深 (-2.5%) 且 跑输大盘
                     if est < -2.5 and est < bench_val:
-                        is_oversold = True
-                        alpha = est - bench_val # 负超额
-                        signal_triggered = True
+                        signal_type = "BUY"
+                        
+                        # 金字塔加仓逻辑
+                        multiplier = 1
+                        if est < -4.0: multiplier = 2 # 暴跌时刻买两份
+                        
+                        buy_amt = base_unit * multiplier
+                        signal_desc = f"超跌错杀：跑输{bench_name} {abs(est-bench_val):.1f}%"
+                        action_advice = f"建议加仓: +¥{buy_amt:,}"
+                        if not signal_msg: signal_msg = "🎯 出现加仓机会"
+
+                    # 2. 🔥 止盈信号 (卖出)
+                    # 逻辑：涨幅大 (3.0%) 且 跑赢大盘 (1.5%) -> 只有疯涨才提示，普通涨不提示
+                    elif est > 3.0 and est > (bench_val + 1.5):
+                        signal_type = "SELL"
+                        signal_desc = f"短期过热：跑赢{bench_name} {abs(est-bench_val):.1f}%"
+                        action_advice = "建议卖出: 1/4 持仓"
+                        if not signal_msg: signal_msg = "🔥 出现止盈机会"
 
                     cards_data.append({
                         "name": name.split('(')[0],
@@ -388,14 +437,13 @@ def main():
                         "profit": profit,
                         "principal": principal,
                         "stocks": stocks,
-                        "is_oversold": is_oversold,
-                        "alpha": alpha,
-                        "bench_name": bench_name
+                        "signal_type": signal_type,
+                        "signal_desc": signal_desc,
+                        "action_advice": action_advice
                     })
                 
-                # Toast 提示 (仅在触发信号时)
-                if signal_triggered:
-                    st.toast("⚠️ 检测到超跌买入机会！", icon="📉")
+                # Toast
+                if signal_msg: st.toast(signal_msg)
 
                 # 1. 💰 总盈亏
                 st.markdown("<br>", unsafe_allow_html=True)
@@ -411,19 +459,31 @@ def main():
                 for card in cards_data:
                     icon = "👑" if card['est'] > 0 else "📿"
                     
-                    # 🔥 如果触发信号，标题加特殊标记
+                    # 🔥 标题动态化
                     title_suffix = f" {card['est']:+.2f}%"
-                    if card['is_oversold']:
-                        title_suffix += " 🎯 机会"
+                    if card['signal_type'] == "BUY": title_suffix += " 🎯 机会"
+                    elif card['signal_type'] == "SELL": title_suffix += " 🔥 止盈"
                     
                     title = f"{icon} {card['name']}{title_suffix}"
                     
                     with st.expander(title):
-                        # 🔥 信号提示条
-                        if card['is_oversold']:
+                        # 🔥 信号提示区 (红/绿)
+                        if card['signal_type'] == "BUY":
                             st.markdown(f"""
-                            <div class='signal-box'>
-                                📉 触发超跌信号：跌幅超 2.5% 且跑输 {card['bench_name']} {abs(card['alpha']):.2f}%
+                            <div class='signal-buy'>
+                                <div>
+                                    <div>🎯 {card['signal_desc']}</div>
+                                    <div style='font-size:15px; margin-top:4px'>👉 {card['action_advice']}</div>
+                                </div>
+                            </div>
+                            """, unsafe_allow_html=True)
+                        elif card['signal_type'] == "SELL":
+                            st.markdown(f"""
+                            <div class='signal-sell'>
+                                <div>
+                                    <div>🔥 {card['signal_desc']}</div>
+                                    <div style='font-size:15px; margin-top:4px'>👉 {card['action_advice']}</div>
+                                </div>
                             </div>
                             """, unsafe_allow_html=True)
 
