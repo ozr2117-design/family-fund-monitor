@@ -2,11 +2,12 @@ name: Fund Sentinel (Daily Check)
 
 on:
   schedule:
-    # 每天北京时间 14:45 运行 (UTC 06:45)
     - cron: '45 6 * * 1-5'
-  
-  # 允许手动点按钮测试
   workflow_dispatch:
+
+# 🔥 核心变化1：赋予写入仓库的权限
+permissions:
+  contents: write
 
 jobs:
   check_and_push:
@@ -22,8 +23,17 @@ jobs:
           python-version: '3.9'
           
       - name: Install dependencies
-        run: |
-          pip install requests
+        run: pip install requests
           
       - name: Run Sentinel Script
         run: python daily_check.py
+        
+      # 🔥 核心变化2：如果日记文件被修改了，把它提交回仓库
+      - name: Commit and Push Log
+        run: |
+          git config --global user.name "FundBot"
+          git config --global user.email "bot@github.com"
+          git add signals.md
+          # 只有当文件有变化时才提交，否则不报错
+          git commit -m "📝 Update signal log" || echo "No changes to commit"
+          git push
