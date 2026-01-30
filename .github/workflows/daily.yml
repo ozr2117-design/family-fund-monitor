@@ -1,0 +1,29 @@
+name: Fund Sentinel (Daily Check)
+
+on:
+  schedule:
+    # 每天北京时间 14:45 运行 (UTC 06:45)
+    - cron: '45 6 * * 1-5'
+  
+  # 允许手动点按钮测试
+  workflow_dispatch:
+
+jobs:
+  check_and_push:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+      
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.9'
+          
+      - name: Install dependencies
+        run: |
+          pip install requests
+          
+      - name: Run Sentinel Script
+        run: python daily_check.py
