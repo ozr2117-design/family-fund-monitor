@@ -1,122 +1,223 @@
 import streamlit as st
 import json
 import requests
+import pandas as pd
 from datetime import datetime
 import pytz
 
 # ==========================================
-# 1. 核心配置区
+# 1. 核心配置与人工审计日志 (Manual Audit Log)
 # ==========================================
+# 这里就是你要求的“上周偏离提示”，直接写在这里方便随时改
 AUDIT_MEMO = {
-    "摩根均衡": {"tag": "⚠️ 偏离较高", "text": "上周偏离 -0.7%，需注意误差", "color": "#FFF3CD", "text_color": "#856404"},
-    "泰康新锐": {"tag": "✅ 准确率高", "text": "基本跟净值一致，可信度高", "color": "#D4EDDA", "text_color": "#155724"},
-    "财通优选": {"tag": "👌 偏差可控", "text": "偏离值可接受，参考性强", "color": "#D1ECF1", "text_color": "#0C5460"}
+    "摩根均衡": {
+        "tag": "⚠️ 偏离较高", 
+        "text": "上周偏离 -0.7%，需注意误差", 
+        "color": "#FFF3CD", # 浅橙色背景
+        "text_color": "#856404" # 深褐色文字
+    },
+    "泰康新锐": {
+        "tag": "✅ 准确率高", 
+        "text": "基本跟净值一致，可信度高", 
+        "color": "#D4EDDA", # 浅绿色背景
+        "text_color": "#155724" # 深绿色文字
+    },
+    "财通优选": {
+        "tag": "👌 偏差可控", 
+        "text": "偏离值可接受，参考性强", 
+        "color": "#D1ECF1", # 浅蓝色背景
+        "text_color": "#0C5460" # 深蓝色文字
+    }
 }
 
+# 页面基础设置
 st.set_page_config(page_title="Family Wealth V5.1", page_icon="📈", layout="centered")
 
 # ==========================================
-# 2. 样式设置 (单行压缩，防止乱码)
+# 2. 极光样式 CSS (强制日间模式)
 # ==========================================
-st.markdown("""<style>.stApp{background:linear-gradient(135deg,#f5f7fa 0%,#c3cfe2 100%)}.fund-card{background-color:rgba(255,255,255,0.85);padding:20px;border-radius:15px;box-shadow:0 4px 15px rgba(0,0,0,0.05);margin-bottom:15px;border:1px solid rgba(255,255,255,0.6)}.audit-pill{display:inline-block;padding:4px 12px;border-radius:20px;font-size:13px;font-weight:500;margin-top:8px;margin-bottom:5px}h1,h2,h3,p,span,div,strong{color:#333333!important}.trend-up{color:#d9534f!important;font-weight:bold}.trend-down{color:#28a745!important;font-weight:bold}.trend-flat{color:#6c757d!important;font-weight:bold}.profit-val{font-size:1.1rem;margin-top:5px;opacity:0.9}</style>""", unsafe_allow_html=True)
+st.markdown("""
+<style>
+    /* 强制背景为极光色，防止夜间模式黑底 */
+    .stApp {
+        background: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%);
+    }
+    
+    /* 卡片样式 */
+    .fund-card {
+        background-color: rgba(255, 255, 255, 0.85);
+        padding: 20px;
+        border-radius: 15px;
+        box-shadow: 0 4px 15px rgba(0,0,0,0.05);
+        margin-bottom: 15px;
+        border: 1px solid rgba(255,255,255,0.6);
+    }
+    
+    /* 审计胶囊样式 (新增) */
+    .audit-pill {
+        display: inline-block;
+        padding: 4px 12px;
+        border-radius: 20px;
+        font-size: 13px;
+        font-weight: 500;
+        margin-top: 8px;
+        margin-bottom: 5px;
+    }
+
+    /* 文字颜色强制深色 */
+    h1, h2, h3, p, span, div {
+        color: #333333 !important;
+    }
+    
+    /* 涨跌颜色 */
+    .trend-up { color: #d9534f !important; font-weight: bold; }
+    .trend-down { color: #28a745 !important; font-weight: bold; }
+    .trend-flat { color: #6c757d !important; font-weight: bold; }
+</style>
+""", unsafe_allow_html=True)
 
 # ==========================================
-# 3. 工具函数
+# 3. 数据获取函数 (腾讯源)
 # ==========================================
-def get_realtime_price(codes):
-    if not codes: return {}
+def get_realtime_price(stock_codes):
+    """
+    批量获取腾讯实时行情
+    """
+    if not stock_codes:
+        return {}
+    
+    url = f"http://qt.gtimg.cn/q={','.join(stock_codes)}"
     try:
-        url = f"http://qt.gtimg.cn/q={','.join(codes)}"
         r = requests.get(url, timeout=3)
-        data = {}
-        if r.status_code == 200:
-            for line in r.text.split(';'):
-                if '="' in line:
-                    c = line.split('=')[0].split('_')[-1]
-                    p = line.split('="')[1].split('~')
-                    if len(p)>30: data[c]={'price':float(p[3]),'pct_change':float(p[32])}
-        return data
-    except: return {}
+        if r.status_code != 200:
+            return {}
+        
+        data_map = {}
+        lines = r.text.split(';')
+        for line in lines:
+            if '="' in line:
+                code = line.split('=')[0].split('_')[-1]
+                params = line.split('="')[1].split('~')
+                if len(params) > 30:
+                    current_price = float(params[3])
+                    last_close = float(params[4])
+                    pct_change = float(params[32])
+                    data_map[code] = {
+                        'price': current_price,
+                        'last_close': last_close,
+                        'pct_change': pct_change
+                    }
+        return data_map
+    except Exception as e:
+        st.error(f"数据源连接失败: {e}")
+        return {}
 
-def calc_est(fund, mkt):
-    w_chg, w_tot = 0.0, 0.0
-    fac = fund.get('factor', 1.0)
-    for s in fund.get('holdings', []):
-        if s['code'] in mkt:
-            w_chg += mkt[s['code']]['pct_change'] * s['weight']
-            w_tot += s['weight']
+def calculate_fund_estimate(fund_info, market_data):
+    """
+    计算基金估算涨跌幅
+    """
+    total_weighted_change = 0.0
+    total_weight = 0.0
     
-    # 返回两个值：涨跌幅(%) 和 预估收益(金额)
-    est_pct = (w_chg/w_tot*fac) if w_tot>0 else 0.0
-    base = fund.get('base_unit', 0)
-    est_profit = base * (est_pct / 100)
-    return est_pct, est_profit
-
-# ==========================================
-# 4. 核心渲染 (列表拼接法 - 包含盈亏显示)
-# ==========================================
-def make_html(name, est, profit, fac, base):
-    # 颜色逻辑
-    if est>0: cls,sg="trend-up","+"
-    elif est<0: cls,sg="trend-down",""
-    else: cls,sg="trend-flat",""
+    holdings = fund_info.get('holdings', [])
+    factor = fund_info.get('factor', 1.0) # 获取系数，默认为1.0
     
-    # 审计提示
-    memo = ""
-    for k,v in AUDIT_MEMO.items():
-        if k in name:
-            memo = f"<div class='audit-pill' style='background-color:{v['color']};color:{v['text_color']};'><strong>{v['tag']}</strong> | {v['text']}</div>"
-            break
+    for stock in holdings:
+        code = stock['code']
+        weight = stock['weight']
+        
+        if code in market_data:
+            change = market_data[code]['pct_change']
+            total_weighted_change += change * weight
+            total_weight += weight
             
-    # 拼接 HTML (带盈亏金额)
-    html = [
-        "<div class='fund-card'>",
-        "<div style='display:flex;justify-content:space-between;align-items:center;'>",
-        f"<h3 style='margin:0;font-size:1.2rem;'>{name}</h3>",
-        f"<div style='text-align:right;'>",
-        f"<span class='{cls}' style='font-size:1.5rem;'>{sg}{est:.2f}%</span>",
-        f"<div class='{cls} profit-val'>{sg}{profit:.2f}</div>",  # 这里加回了具体金额
-        f"</div>",
-        "</div>",
-        memo,
-        f"<div style='margin-top:10px;font-size:0.9rem;color:#666;'>系数: {fac:.2f} | 底仓: {base}</div>",
-        "</div>"
-    ]
-    return "".join(html)
+    if total_weight > 0:
+        # 归一化处理：假设前十大持仓代表整体
+        estimated_change = (total_weighted_change / total_weight) * factor
+        return estimated_change
+    return 0.0
 
 # ==========================================
-# 5. 主程序
+# 4. 主程序逻辑
 # ==========================================
 def main():
+    # 标题与时间
     tz = pytz.timezone('Asia/Shanghai')
     now = datetime.now(tz)
-    
     st.markdown(f"# 📈 Family Wealth V5.1")
+    st.caption(f"最后更新: {now.strftime('%Y-%m-%d %H:%M:%S')}")
     
-    # 恢复设置面板 (Settings)
-    with st.expander("⚙️ 系统设置 (Settings)"):
-        st.caption(f"最后更新时间: {now.strftime('%Y-%m-%d %H:%M:%S')}")
-        if st.button("🔄 强制刷新数据"):
-            st.rerun()
-        st.info("如需修改持仓，请前往 GitHub 编辑 funds.json")
-
+    # 加载配置
     try:
-        with open('funds.json','r',encoding='utf-8') as f: funds=json.load(f)
-    except: st.error("No funds.json"); return
+        with open('funds.json', 'r', encoding='utf-8') as f:
+            funds_config = json.load(f)
+    except FileNotFoundError:
+        st.error("找不到 funds.json 配置文件")
+        return
+
+    # 提取所有股票代码进行批量查询
+    all_stocks = set()
+    for fund in funds_config.values():
+        for stock in fund.get('holdings', []):
+            all_stocks.add(stock['code'])
+            
+    # 获取行情
+    market_data = get_realtime_price(list(all_stocks))
     
-    codes = {s['code'] for f in funds.values() for s in f.get('holdings',[])}
-    mkt = get_realtime_price(list(codes))
-    
-    if not mkt: st.warning("等待开盘..."); return
-    
-    # 渲染卡片
-    for n, f in funds.items():
-        # 这里接收两个返回值：百分比 和 金额
-        est_pct, est_profit = calc_est(f, mkt)
+    if not market_data:
+        st.warning("等待开盘或数据源响应中...")
+        return
+
+    # ----------------------------------
+    # 核心卡片渲染循环
+    # ----------------------------------
+    for fund_name, fund_info in funds_config.items():
+        # 计算估值
+        est_change = calculate_fund_estimate(fund_info, market_data)
         
-        # 调用生成器
-        card_html = make_html(n, est_pct, est_profit, f.get('factor',1.0), f.get('base_unit',0))
-        st.markdown(card_html, unsafe_allow_html=True)
+        # 确定颜色
+        if est_change > 0:
+            color_class = "trend-up"
+            sign = "+"
+        elif est_change < 0:
+            color_class = "trend-down"
+            sign = ""
+        else:
+            color_class = "trend-flat"
+            sign = ""
+            
+        # ----------------------------------
+        # 🔥 新增功能：查找并显示人工审计提示
+        # ----------------------------------
+        audit_html = ""
+        # 模糊匹配：只要配置里的名字包含在基金名里，就显示提示
+        for key, memo in AUDIT_MEMO.items():
+            if key in fund_name:
+                audit_html = f"""
+                <div class="audit-pill" style="background-color: {memo['color']}; color: {memo['text_color']};">
+                    <strong>{memo['tag']}</strong> | {memo['text']}
+                </div>
+                """
+                break
+        
+        # 渲染卡片 HTML
+        st.markdown(f"""
+        <div class="fund-card">
+            <div style="display:flex; justify-content:space-between; align-items:center;">
+                <h3 style="margin:0; font-size:1.2rem;">{fund_name}</h3>
+                <span class="{color_class}" style="font-size:1.5rem;">{sign}{est_change:.2f}%</span>
+            </div>
+            {audit_html}
+            <div style="margin-top:10px; font-size:0.9rem; color:#666;">
+                系数: {fund_info.get('factor', 1.0):.2f} | 
+                底仓: {fund_info.get('base_unit', 0)}
+            </div>
+        </div>
+        """, unsafe_allow_html=True)
+        
+    # 底部刷新按钮
+    if st.button('🔄 刷新数据'):
+        st.rerun()
 
 if __name__ == "__main__":
     main()
