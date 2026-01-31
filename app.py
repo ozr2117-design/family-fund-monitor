@@ -30,7 +30,7 @@ AUDIT_MEMO = {
     }
 }
 
-# === 🎨 1. 页面配置与 CSS 魔法 (Apple Glassmorphism V5.3.1) ===
+# === 🎨 1. 页面配置与 CSS 魔法 (Apple Glassmorphism V5.3.2) ===
 st.set_page_config(
     page_title="Family Wealth V5.3",
     page_icon="💎",
@@ -136,7 +136,7 @@ st.markdown("""
     /* 💊 审计胶囊样式 */
     .audit-pill { display: inline-block; padding: 4px 12px; border-radius: 20px; font-size: 12px; font-weight: 500; margin-bottom: 12px; font-family: -apple-system; }
     
-    /* 🧬 趋势胶囊样式 (New Trend Pill) */
+    /* 🧬 趋势胶囊样式 */
     .trend-pill { display: inline-block; padding: 2px 8px; border-radius: 4px; font-size: 11px; font-weight: 500; margin-right: 6px; margin-top: 6px; font-family: -apple-system; }
     .trend-up { background-color: #fff1f0; color: #cf1322; border: 1px solid #ffa39e; }
     .trend-down { background-color: #f6ffed; color: #389e0d; border: 1px solid #b7eb8f; }
@@ -198,7 +198,7 @@ def save_factor_history(date_str, new_factors_dict):
     save_json('factor_history.json', history, sha, f"Factor Log {date_str}")
 
 # === 🕷️ 数据获取 ===
-# 1. 腾讯实时行情
+# 1. 腾讯实时行情 (Key: 'change', not 'pct')
 def get_realtime_price(stock_codes):
     if not stock_codes: return {}
     url = f"http://qt.gtimg.cn/q={','.join(stock_codes)}"
@@ -215,6 +215,7 @@ def get_realtime_price(stock_codes):
                         close = float(data[4])
                         if close > 0:
                             pct = ((float(data[3]) - close) / close) * 100
+                            # 注意：这里我们统一用 'change'
                             price_data[code] = {'name': name, 'change': pct}
                 except: continue
         return price_data
@@ -223,25 +224,21 @@ def get_realtime_price(stock_codes):
 # 2. 基金历史净值 (腾讯源，更稳定🔥)
 def get_fund_history(fund_code, limit=30):
     if not fund_code: return []
-    # 腾讯的接口：jj + 基金代码
     url = f"http://web.ifzq.gtimg.cn/appstock/app/fund/nav/get?code=jj{fund_code}"
     try:
         r = requests.get(url, timeout=2)
         if r.status_code == 200:
             res = r.json()
-            # 腾讯返回的结构：data -> jjCode -> data
             key = f"jj{fund_code}"
             if "data" in res and key in res["data"]:
                 data_list = res["data"][key]["data"]
-                # 腾讯数据是按日期正序的 (旧->新)，我们倒序取最近的
-                # item[2] 是当日涨跌幅
+                # 腾讯数据按日期正序，需倒序取最近的
                 history = []
                 for item in reversed(data_list):
                     if len(history) >= limit: break
                     history.append(float(item[2]))
                 return history
     except Exception as e:
-        # print(f"History Error: {e}")
         pass
     return []
 
@@ -306,7 +303,7 @@ def main():
             st.caption("Actions")
             action_mode = st.radio("Tools", ["💾  收盘存证", "⚖️  晚间审计"], label_visibility="collapsed", index=None, key="act")
 
-            # === 功能区逻辑 (持仓/存证/审计) ===
+            # === 功能区逻辑 ===
             current_selection = action_mode if action_mode else mode
             if current_selection == "💰  持仓管理":
                 st.divider()
@@ -398,15 +395,15 @@ def main():
                         d = market.get(s['code'])
                         if d:
                             val += d['change']*s['weight']; w += s['weight']
+                            # 🔥 Fix: 直接存入 d，它包含 'change' Key
                             if len(stocks)<3: stocks.append(d)
                     
                     est = (val/w * info.get('factor', 1.0)) if w>0 else 0
                     profit = info.get('holding_value', 0) * est / 100
                     total_p += profit; total_base += info.get('holding_value', 0)
 
-                    # 2. 计算趋势 (腾讯源优化版 🔥)
+                    # 2. 计算趋势 (腾讯源优化版)
                     f_code = None
-                    # 智能匹配逻辑：只要 Map 里的名字包含 JSON 里的名字 (或者反过来)，就算匹配成功
                     for k_map, v_map in FUND_CODES_MAP.items():
                         if name.split('(')[0] in k_map or k_map in name:
                             f_code = v_map
@@ -438,7 +435,7 @@ def main():
                         "name": name.split('(')[0], "full_name": name,
                         "est": est, "profit": profit, "principal": info.get('holding_value', 0),
                         "stocks": stocks, "sig_type": sig_type, "sig_desc": sig_desc, "act_adv": act_adv,
-                        "consecutive": consecutive, "trend_ratio": trend_ratio # 存入趋势数据
+                        "consecutive": consecutive, "trend_ratio": trend_ratio
                     })
                 
                 if msg: st.toast(msg)
@@ -461,7 +458,7 @@ def main():
                     elif card['sig_type']=="SELL": suffix += " 🔥 止盈"
                     
                     with st.expander(f"{icon} {card['name']}{suffix}"):
-                        # --- 审计胶囊 (Audit Pill) ---
+                        # --- 审计胶囊 ---
                         for k, v in AUDIT_MEMO.items():
                             if k in card['full_name']:
                                 st.markdown(f"<div class='audit-pill' style='background-color:{v['color']}; color:{v['text_color']};'><strong>{v['tag']}</strong> | {v['text']}</div>", unsafe_allow_html=True)
@@ -473,13 +470,13 @@ def main():
                             icon_s = "🎯" if card['sig_type']=="BUY" else "🔥"
                             st.markdown(f"<div class='{cls}'><div><div>{icon_s} {card['sig_desc']}</div><div style='font-size:15px; margin-top:4px'>👉 {card['act_adv']}</div></div></div>", unsafe_allow_html=True)
 
-                        # --- 详情数据区 (含趋势胶囊) ---
+                        # --- 详情数据区 ---
                         kc1, kc2 = st.columns([1.1, 2])
                         col_c = "#ff3b30" if card['profit']>0 else "#34c759"
                         prof_s = "<span style='color:#aaa'>****</span>" if zen_mode else f"￥{card['profit']:+.1f}"
                         prin_s = "****" if zen_mode else f"￥{card['principal']:,}"
 
-                        # 构造趋势胶囊 HTML
+                        # 构造趋势胶囊
                         cons = card['consecutive']
                         if cons > 0: tr_html = f"<span class='trend-pill trend-up'>🔥 {cons}连涨</span>"
                         elif cons < 0: tr_html = f"<span class='trend-pill trend-down'>❄️ {abs(cons)}连跌</span>"
@@ -497,11 +494,13 @@ def main():
                         </div>
                         """, unsafe_allow_html=True)
 
-                        # --- 右侧持仓股票 ---
+                        # --- 右侧持仓股票 (🔥 修复 Key Error: pct -> change) ---
                         rows = ""
                         for i, s in enumerate(card['stocks']):
-                            bg = "#ff3b30" if s['pct']>0 else ("#34c759" if s['pct']<0 else "#8e8e93")
-                            rows += f"<div class='ios-row'><div class='ios-index'>{i+1}</div><div class='ios-name'>{s['name']}</div><div class='ios-pill' style='background-color:{bg}'>{s['pct']:+.2f}%</div></div>"
+                            # 使用 .get 确保安全
+                            pct = s.get('change', 0)
+                            bg = "#ff3b30" if pct>0 else ("#34c759" if pct<0 else "#8e8e93")
+                            rows += f"<div class='ios-row'><div class='ios-index'>{i+1}</div><div class='ios-name'>{s['name']}</div><div class='ios-pill' style='background-color:{bg}'>{pct:+.2f}%</div></div>"
                         kc2.markdown(f"<div class='ios-list-container'>{rows}</div>", unsafe_allow_html=True)
 
                 st.divider()
