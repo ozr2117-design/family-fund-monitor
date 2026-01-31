@@ -35,32 +35,28 @@ st.set_page_config(page_title="Family Wealth V5.1", page_icon="📈", layout="ce
 # ==========================================
 st.markdown("""
 <style>
-    .stApp {
-        background: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%);
-    }
-    .fund-card {
-        background-color: rgba(255, 255, 255, 0.85);
-        padding: 20px;
-        border-radius: 15px;
-        box-shadow: 0 4px 15px rgba(0,0,0,0.05);
-        margin-bottom: 15px;
-        border: 1px solid rgba(255,255,255,0.6);
-    }
-    .audit-pill {
-        display: inline-block;
-        padding: 4px 12px;
-        border-radius: 20px;
-        font-size: 13px;
-        font-weight: 500;
-        margin-top: 8px;
-        margin-bottom: 5px;
-    }
-    h1, h2, h3, p, span, div, strong {
-        color: #333333 !important;
-    }
-    .trend-up { color: #d9534f !important; font-weight: bold; }
-    .trend-down { color: #28a745 !important; font-weight: bold; }
-    .trend-flat { color: #6c757d !important; font-weight: bold; }
+.stApp {background: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%);}
+.fund-card {
+    background-color: rgba(255, 255, 255, 0.85);
+    padding: 20px;
+    border-radius: 15px;
+    box-shadow: 0 4px 15px rgba(0,0,0,0.05);
+    margin-bottom: 15px;
+    border: 1px solid rgba(255,255,255,0.6);
+}
+.audit-pill {
+    display: inline-block;
+    padding: 4px 12px;
+    border-radius: 20px;
+    font-size: 13px;
+    font-weight: 500;
+    margin-top: 8px;
+    margin-bottom: 5px;
+}
+h1, h2, h3, p, span, div, strong {color: #333333 !important;}
+.trend-up {color: #d9534f !important; font-weight: bold;}
+.trend-down {color: #28a745 !important; font-weight: bold;}
+.trend-flat {color: #6c757d !important; font-weight: bold;}
 </style>
 """, unsafe_allow_html=True)
 
@@ -68,8 +64,7 @@ st.markdown("""
 # 3. 数据获取函数
 # ==========================================
 def get_realtime_price(stock_codes):
-    if not stock_codes:
-        return {}
+    if not stock_codes: return {}
     url = f"http://qt.gtimg.cn/q={','.join(stock_codes)}"
     try:
         r = requests.get(url, timeout=3)
@@ -149,28 +144,25 @@ def main():
             color_class = "trend-flat"
             sign = ""
             
-        # 生成审计提示 HTML (单行模式，防止缩进错误)
+        # 生成审计提示 HTML (完全去缩进)
         audit_html = ""
         for key, memo in AUDIT_MEMO.items():
             if key in fund_name:
                 audit_html = f'<div class="audit-pill" style="background-color: {memo["color"]}; color: {memo["text_color"]};"><strong>{memo["tag"]}</strong> | {memo["text"]}</div>'
                 break
         
-        # ⚠️ 核心修复：构建无缩进的 HTML 字符串
-        # 我们先把变量准备好，然后用最简单的 f-string 拼接，避免 st.markdown 识别缩进
-        card_html = f"""
-<div class="fund-card">
-    <div style="display:flex; justify-content:space-between; align-items:center;">
-        <h3 style="margin:0; font-size:1.2rem;">{fund_name}</h3>
-        <span class="{color_class}" style="font-size:1.5rem;">{sign}{est_change:.2f}%</span>
-    </div>
-    {audit_html}
-    <div style="margin-top:10px; font-size:0.9rem; color:#666;">
-        系数: {fund_info.get('factor', 1.0):.2f} | 
-        底仓: {fund_info.get('base_unit', 0)}
-    </div>
+        # ⚠️ 关键修正：HTML 字符串完全左对齐，不留任何前导空格
+        card_html = f"""<div class="fund-card">
+<div style="display:flex; justify-content:space-between; align-items:center;">
+<h3 style="margin:0; font-size:1.2rem;">{fund_name}</h3>
+<span class="{color_class}" style="font-size:1.5rem;">{sign}{est_change:.2f}%</span>
 </div>
-"""
+{audit_html}
+<div style="margin-top:10px; font-size:0.9rem; color:#666;">
+系数: {fund_info.get('factor', 1.0):.2f} | 底仓: {fund_info.get('base_unit', 0)}
+</div>
+</div>"""
+        
         st.markdown(card_html, unsafe_allow_html=True)
         
     if st.button('🔄 刷新数据'):
