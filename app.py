@@ -24,7 +24,7 @@ AUDIT_MEMO = {
     }
 }
 
-# 基金代码映射 (C类份额)
+# 🛠️ 基金代码映射表 (C类份额)
 FUND_CODES_MAP = {
     '摩根均衡': '021274',
     '泰康新锐': '017366',
@@ -42,12 +42,14 @@ st.set_page_config(
 
 st.markdown("""
     <style>
+    /* 全局背景 */
     .stApp {
         background: radial-gradient(circle at 10% 20%, rgba(255, 230, 240, 0.4) 0%, rgba(255, 255, 255, 0) 40%),
                     radial-gradient(circle at 90% 80%, rgba(230, 240, 255, 0.4) 0%, rgba(255, 255, 255, 0) 40%),
                     #fdfdfd;
         font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Helvetica Neue", sans-serif;
     }
+    
     [data-testid="stSidebar"] {display: none;}
     #MainMenu {visibility: hidden;}
     footer {visibility: hidden;}
@@ -94,7 +96,7 @@ st.markdown("""
 
 MARKET_INDICES = {'sh000001': '上证指数', 'sz399006': '创业板指', 'hkHSTECH': '恒生科技'}
 
-# === 🛠️ 辅助函数 (🔥 补回丢失的函数) ===
+# === 🛠️ 辅助函数 ===
 def get_benchmark_code(fund_name):
     if "周期" in fund_name or "均衡" in fund_name or "红利" in fund_name: return 'sh000001', '上证'
     elif "成长" in fund_name or "AI" in fund_name or "优选" in fund_name: return 'sz399006', '创指'
@@ -123,6 +125,14 @@ def save_json(filename, data, sha, message):
         new_content = json.dumps(data, indent=4, ensure_ascii=False)
         if sha: repo.update_file(filename, message, new_content, sha)
         else: repo.create_file(filename, message, new_content)
+
+def save_factor_history(date_str, new_factors_dict):
+    history, sha = load_json('factor_history.json')
+    if not isinstance(history, dict): history = {}
+    existing_record = history.get(date_str, {})
+    existing_record.update(new_factors_dict)
+    history[date_str] = existing_record
+    save_json('factor_history.json', history, sha, f"Factor Log {date_str}")
 
 # === 🕷️ 数据获取 ===
 def get_realtime_price(stock_codes):
@@ -280,9 +290,14 @@ def main():
                     profit = info.get('holding_value', 0) * est / 100
                     total_p += profit; total_b += info.get('holding_value', 0)
 
-                    # 2. 官方净值 + 自动归档 (🔥 核心逻辑)
-                    short_name = name.split('(')[0]
-                    f_code = FUND_CODES_MAP.get(short_name)
+                    # 2. 官方净值 + 自动归档 (🔥 智能模糊匹配)
+                    short_name = name.split('(')[0].strip() # "摩根均衡C"
+                    f_code = None
+                    # 智能循环匹配，不管有没有 C 都能找到
+                    for k, v in FUND_CODES_MAP.items():
+                        if k in short_name or short_name in k:
+                            f_code = v
+                            break
                     
                     last_pct, last_date = get_latest_official(f_code)
                     if last_pct is not None:
