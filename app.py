@@ -25,9 +25,9 @@ AUDIT_MEMO = {
     }
 }
 
-# === 🎨 1. 页面配置与 CSS 魔法 (V5.3.3 Pro) ===
+# === 🎨 1. 页面配置与 CSS 魔法 (V5.4 Stable) ===
 st.set_page_config(
-    page_title="Family Wealth Pro",
+    page_title="Family Wealth",
     page_icon="💎",
     layout="centered",
     initial_sidebar_state="collapsed"
@@ -43,14 +43,13 @@ st.markdown("""
         font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Helvetica Neue", sans-serif;
     }
     
-    /* 隐藏杂项 */
     [data-testid="stSidebar"] {display: none;}
     [data-testid="stSidebarCollapsedControl"] {display: none;}
     #MainMenu {visibility: hidden;}
     footer {visibility: hidden;}
     header {visibility: hidden;}
     
-    /* 设置按钮 */
+    /* 按钮样式 */
     div[data-testid="stPopover"] > button {
         border-radius: 20px;
         background-color: rgba(255, 255, 255, 0.6);
@@ -59,7 +58,7 @@ st.markdown("""
         box-shadow: 0 2px 10px rgba(0,0,0,0.03);
     }
     
-    /* 收益大卡片 */
+    /* 大卡片 */
     div[data-testid="stMetric"] {
         background: rgba(255, 255, 255, 0.65);
         backdrop-filter: blur(16px);
@@ -68,7 +67,6 @@ st.markdown("""
         box-shadow: 0 8px 32px rgba(31, 38, 135, 0.05);
     }
     
-    /* 基金卡片容器 */
     div[data-testid="stExpander"] {
         border: none;
         box-shadow: 0 8px 24px rgba(0,0,0,0.03);
@@ -79,7 +77,6 @@ st.markdown("""
         overflow: hidden;
     }
     
-    /* 列表样式 */
     .ios-list-container { display: flex; flex-direction: column; width: 100%; }
     .ios-row { display: flex; align-items: center; justify-content: space-between; padding: 10px 0; border-bottom: 1px solid rgba(0,0,0,0.06); width: 100%; }
     .ios-row:last-child { border-bottom: none; }
@@ -88,11 +85,9 @@ st.markdown("""
     .ios-pill { padding: 4px 10px; border-radius: 6px; font-size: 13px; font-weight: 600; min-width: 65px; text-align: right; color: white; font-family: -apple-system; }
     .detail-box { background: rgba(255,255,255,0.6); padding: 15px; border-radius: 12px; border: 1px solid rgba(255,255,255,0.4); }
     
-    /* 信号提示 */
     .signal-buy { background-color: #f6ffed; border: 1px solid #b7eb8f; color: #389e0d; padding: 10px; border-radius: 10px; font-size: 13px; font-weight: 600; margin-bottom: 15px; display: flex; align-items: center; }
     .signal-sell { background-color: #fff2f0; border: 1px solid #ffccc7; color: #cf1322; padding: 10px; border-radius: 10px; font-size: 13px; font-weight: 600; margin-bottom: 15px; display: flex; align-items: center; }
 
-    /* 💊 胶囊样式组 */
     .audit-pill { display: inline-block; padding: 4px 12px; border-radius: 20px; font-size: 12px; font-weight: 500; margin-bottom: 12px; font-family: -apple-system; }
     
     .trend-pill { display: inline-block; padding: 2px 8px; border-radius: 4px; font-size: 11px; font-weight: 500; margin-right: 6px; margin-top: 6px; font-family: -apple-system; }
@@ -110,7 +105,7 @@ MARKET_INDICES = {
     'hkHSTECH': '恒生科技'
 }
 
-# 🔥 这里的名字必须和你 funds.json 里的名字包含关系，哪怕是简称
+# 用于历史数据抓取的映射表 (请确保这些名字能匹配 funds.json 中的名字)
 FUND_CODES_MAP = {
     '摩根均衡': '009968',
     '泰康新锐': '009340',
@@ -157,7 +152,7 @@ def save_factor_history(date_str, new_factors_dict):
     history[date_str] = existing_record
     save_json('factor_history.json', history, sha, f"Factor Log {date_str}")
 
-# === 🕷️ 数据获取 (双引擎版) ===
+# === 🕷️ 数据获取 (熔断增强版) ===
 
 # 1. 实时行情 (腾讯)
 def get_realtime_price(stock_codes):
@@ -173,10 +168,23 @@ def get_realtime_price(stock_codes):
                     data = part.split('="')[1].split('~')
                     if len(data) > 30:
                         name = data[1].replace(" ", "")
-                        close = float(data[4])
-                        pct = float(data[30]) if len(data) > 30 and data[30] != '' else 0.0 # 优先用涨跌幅字段
-                        if pct == 0 and close > 0: # 备用计算
-                             pct = ((float(data[3]) - close) / close) * 100
+                        
+                        # 🔥 熔断机制：安全解析
+                        try:
+                            # 尝试获取涨跌幅 (Index 30 是腾讯预计算好的涨跌幅，更准)
+                            pct = float(data[32]) if len(data) > 32 and data[32] != '' else 0.0
+                            # 如果 Index 32 没数据，退化到手动计算
+                            if pct == 0.0:
+                                current = float(data[3])
+                                close = float(data[4])
+                                if close > 0: pct = ((current - close) / close) * 100
+                        except:
+                            pct = 0.0
+
+                        # 🔥 熔断检查：如果涨跌幅绝对值超过 50%，视为数据异常（防止读取到日期 20260130 导致页面炸裂）
+                        if abs(pct) > 50:
+                            pct = 0.0
+                            
                         price_data[code] = {'name': name, 'change': pct}
                 except: continue
         return price_data
@@ -186,7 +194,7 @@ def get_realtime_price(stock_codes):
 def get_fund_history(fund_code, limit=30):
     if not fund_code: return []
     
-    # --- Plan A: 腾讯接口 (通常对海外IP友好) ---
+    # Plan A: 腾讯接口
     url_tencent = f"http://web.ifzq.gtimg.cn/appstock/app/fund/nav/get?code=jj{fund_code}"
     try:
         r = requests.get(url_tencent, timeout=2)
@@ -200,14 +208,13 @@ def get_fund_history(fund_code, limit=30):
                     if len(history) >= limit: break
                     history.append(float(item[2]))
                 if history: return history
-    except:
-        pass # Plan A 失败，静默切 Plan B
+    except: pass
 
-    # --- Plan B: 东财接口 (带强力Header) ---
+    # Plan B: 东财接口 (备份)
     url_east = f"https://api.fund.eastmoney.com/f10/lsjz?fundCode={fund_code}&pageIndex=1&pageSize={limit}"
     headers = {
         "Referer": "http://fund.eastmoney.com/", 
-        "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/120.0.0.0 Safari/537.36"
     }
     try:
         r = requests.get(url_east, headers=headers, timeout=3)
@@ -219,19 +226,14 @@ def get_fund_history(fund_code, limit=30):
                     val = item.get("JZZZL", "0")
                     if val: history.append(float(val))
                 return history
-    except:
-        pass
+    except: pass
     
-    return [] # 都失败了返回空
+    return []
 
-# 3. 趋势计算引擎 (防守逻辑)
+# 3. 趋势计算
 def calculate_trend(current_est, history_data):
     if not history_data: return 0, "等待数据..."
-    
-    # 拼接今天和历史
     full_timeline = [current_est] + history_data
-    
-    # 计算连涨/连跌
     consecutive = 0
     direction = 1 if full_timeline[0] > 0 else (-1 if full_timeline[0] < 0 else 0)
     
@@ -241,13 +243,11 @@ def calculate_trend(current_est, history_data):
                 consecutive += 1
             else: break
             
-    # 计算30天比例
     red_days = sum(1 for x in full_timeline[:30] if x > 0)
     green_days = sum(1 for x in full_timeline[:30] if x < 0)
-    
     return (consecutive * direction), f"{red_days}红 / {green_days}绿"
 
-# 4. 获取官方净值(审计用)
+# 4. 官方净值获取
 def get_official_nav(fund_code):
     url = f"https://api.fund.eastmoney.com/f10/lsjz?fundCode={fund_code}&pageIndex=1&pageSize=1"
     headers = {"Referer": "http://fund.eastmoney.com/", "User-Agent": "Mozilla/5.0"}
@@ -264,7 +264,6 @@ def main():
     funds_config, config_sha = load_json('funds.json')
     if not funds_config: st.stop()
 
-    # 顶部导航
     bj_time = datetime.utcnow() + timedelta(hours=8)
     now_hour = bj_time.hour
     greeting = "Good Morning ☀️" if 5 <= now_hour < 12 else "Good Afternoon ☕" if 12 <= now_hour < 18 else "Good Evening 🌙"
@@ -286,7 +285,6 @@ def main():
             st.caption("Actions")
             action_mode = st.radio("Tools", ["💾  收盘存证", "⚖️  晚间审计"], label_visibility="collapsed", index=None, key="act")
 
-            # === 功能区逻辑 ===
             current_selection = action_mode if action_mode else mode
             if current_selection == "💰  持仓管理":
                 st.divider()
@@ -355,9 +353,6 @@ def main():
                             st.success("Optimized!"); time.sleep(1); st.rerun()
                         else: st.info("No updates")
 
-    # ==========================================
-    # 👇 主展示区
-    # ==========================================
     if "持仓管理" not in str(mode) and "持仓管理" not in str(action_mode):
         placeholder = st.empty()
         all_codes = list(MARKET_INDICES.keys())
@@ -372,32 +367,29 @@ def main():
                 total_p = 0; total_base = 0; cards = []; msg = None
                 
                 for name, info in funds_config.items():
-                    # 1. 估值计算
                     val=0; w=0; stocks=[]
                     for s in info['holdings']:
                         d = market.get(s['code'])
                         if d:
                             val += d['change']*s['weight']; w += s['weight']
-                            if len(stocks)<3: stocks.append(d)
+                            # 🔥 修复KeyError: 统一写入 pct
+                            if len(stocks)<3: stocks.append({"name": d['name'], "pct": d['change']})
                     
                     est = (val/w * info.get('factor', 1.0)) if w>0 else 0
                     profit = info.get('holding_value', 0) * est / 100
                     total_p += profit; total_base += info.get('holding_value', 0)
 
-                    # 2. 趋势计算 (增强版)
-                    short_name = name.split('(')[0] # 提取 "摩根均衡C"
+                    # 趋势计算
+                    short_name = name.split('(')[0]
                     f_code = None
-                    
-                    # 强力匹配逻辑
                     for k_map, v_map in FUND_CODES_MAP.items():
                         if k_map in short_name or short_name in k_map:
                             f_code = v_map
                             break
-                    
                     hist_data = get_fund_history(f_code)
                     consecutive, trend_ratio = calculate_trend(est, hist_data)
 
-                    # 3. 信号
+                    # 信号逻辑
                     bench_code, bench_name = get_benchmark_code(name)
                     bench_val = market.get(bench_code, {}).get('change', 0)
                     sig_type = None; sig_desc = ""; act_adv = ""
@@ -424,7 +416,6 @@ def main():
                 
                 if msg: st.toast(msg)
 
-                # 总览
                 st.markdown("<br>", unsafe_allow_html=True)
                 c1, c2 = st.columns([1.8, 1])
                 p_disp = "****" if zen_mode else f"{total_p:+.2f}"
@@ -441,35 +432,26 @@ def main():
                     elif card['sig_type']=="SELL": suffix += " 🔥 止盈"
                     
                     with st.expander(f"{icon} {card['name']}{suffix}"):
-                        # 审计胶囊
                         for k, v in AUDIT_MEMO.items():
                             if k in card['full_name']:
                                 st.markdown(f"<div class='audit-pill' style='background-color:{v['color']}; color:{v['text_color']};'><strong>{v['tag']}</strong> | {v['text']}</div>", unsafe_allow_html=True)
                                 break
                         
-                        # 信号
                         if card['sig_type']:
                             cls = "signal-buy" if card['sig_type']=="BUY" else "signal-sell"
                             icon_s = "🎯" if card['sig_type']=="BUY" else "🔥"
                             st.markdown(f"<div class='{cls}'><div><div>{icon_s} {card['sig_desc']}</div><div style='font-size:15px; margin-top:4px'>👉 {card['act_adv']}</div></div></div>", unsafe_allow_html=True)
 
-                        # 详情区 (修正：如果没有数据，显示灰色待机胶囊，而不是隐藏)
                         kc1, kc2 = st.columns([1.1, 2])
                         col_c = "#ff3b30" if card['profit']>0 else "#34c759"
                         prof_s = "<span style='color:#aaa'>****</span>" if zen_mode else f"￥{card['profit']:+.1f}"
                         prin_s = "****" if zen_mode else f"￥{card['principal']:,}"
 
-                        # --- 趋势胶囊逻辑 (强制显示) ---
                         cons = card['consecutive']
-                        if "等待" in card['trend_ratio']:
-                            tr_html = "<span class='trend-pill trend-wait'>⏳ 暂无历史</span>"
-                        elif cons > 0: 
-                            tr_html = f"<span class='trend-pill trend-up'>🔥 {cons}连涨</span>"
-                        elif cons < 0: 
-                            tr_html = f"<span class='trend-pill trend-down'>❄️ {abs(cons)}连跌</span>"
-                        else: 
-                            tr_html = "<span class='trend-pill trend-wait'>〰️ 0连涨</span>"
-                        
+                        if "等待" in card['trend_ratio']: tr_html = "<span class='trend-pill trend-wait'>⏳ 暂无历史</span>"
+                        elif cons > 0: tr_html = f"<span class='trend-pill trend-up'>🔥 {cons}连涨</span>"
+                        elif cons < 0: tr_html = f"<span class='trend-pill trend-down'>❄️ {abs(cons)}连跌</span>"
+                        else: tr_html = "<span class='trend-pill trend-wait'>〰️ 0连涨</span>"
                         st_html = f"<span class='trend-pill trend-stats'>近30天: {card['trend_ratio']}</span>"
 
                         kc1.markdown(f"""
@@ -483,10 +465,10 @@ def main():
                         </div>
                         """, unsafe_allow_html=True)
 
-                        # 右侧持仓
                         rows = ""
                         for i, s in enumerate(card['stocks']):
-                            pct = s.get('change', 0)
+                            # 🔥 修复KeyError: 读取 pct
+                            pct = s.get('pct', 0.0)
                             bg = "#ff3b30" if pct>0 else ("#34c759" if pct<0 else "#8e8e93")
                             rows += f"<div class='ios-row'><div class='ios-index'>{i+1}</div><div class='ios-name'>{s['name']}</div><div class='ios-pill' style='background-color:{bg}'>{pct:+.2f}%</div></div>"
                         kc2.markdown(f"<div class='ios-list-container'>{rows}</div>", unsafe_allow_html=True)
