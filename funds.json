@@ -1,7 +1,7 @@
 {
     "摩根均衡C (梁鹏/周期)": {
         "factor": 1.6,
-        "holding_value": 460000,
+        "holding_value": 444000.0,
         "holdings": [
             {
                 "code": "sz000683",
@@ -53,11 +53,12 @@
                 "name": "亿纬锂能",
                 "weight": 3.09
             }
-        ]
+        ],
+        "base_unit": 10000.0
     },
     "泰康新锐C (韩庆/成长)": {
         "factor": 1.0,
-        "holding_value": 100000,
+        "holding_value": 103000.0,
         "holdings": [
             {
                 "code": "sz002371",
@@ -109,11 +110,12 @@
                 "name": "九号公司",
                 "weight": 3.2
             }
-        ]
+        ],
+        "base_unit": 10000.0
     },
     "财通优选C (金梓才/AI)": {
         "factor": 1.0,
-        "holding_value": 230000,
+        "holding_value": 237000.0,
         "holdings": [
             {
                 "code": "sz300502",
@@ -165,6 +167,7 @@
                 "name": "工业富联",
                 "weight": 6.72
             }
-        ]
+        ],
+        "base_unit": 10000.0
     }
 }
