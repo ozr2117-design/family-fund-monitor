@@ -131,9 +131,9 @@ def save_factor_history(date_str, new_factors_dict):
     history[date_str] = existing_record
     save_json('factor_history.json', history, sha, f"Factor Log {date_str}")
 
-# === 🕷️ 腾讯数据全家桶 (快且稳) ===
+# === 🕷️ 腾讯数据全家桶 (Stable & Fast) ===
 
-# 1. 抓股票实时行情 (统一 Key: 'pct')
+# 1. 抓股票实时行情 (Key: 'pct')
 def get_realtime_price(stock_codes):
     if not stock_codes: return {}
     url = f"http://qt.gtimg.cn/q={','.join(stock_codes)}"
@@ -156,30 +156,31 @@ def get_realtime_price(stock_codes):
                         
                         # 简单熔断
                         if abs(pct) > 60: pct = 0.0
-                        # 🔥 重点：这里统一命名为 'pct'，不再叫 'change'
                         price_data[code] = {'name': name, 'pct': pct}
                 except: continue
         return price_data
     except: return None
 
-# 2. 抓基金官方净值 (只取昨天最新的) - 腾讯接口
+# 2. 🔥 修正：使用 qt.gtimg.cn 抓基金官方净值 (海外IP友好)
 def get_latest_official(fund_code):
-    if not fund_code: return None, None
-    url = f"http://web.ifzq.gtimg.cn/appstock/app/fund/nav/get?code=jj{fund_code}"
+    if not fund_code: return None
+    # 使用 qt.gtimg.cn，jj前缀，这和股票是同一个服务器，绝对稳
+    url = f"http://qt.gtimg.cn/q=jj{fund_code}"
     try:
         r = requests.get(url, timeout=2)
-        if r.status_code == 200:
-            res = r.json()
-            key = f"jj{fund_code}"
-            if "data" in res and key in res["data"]:
-                data_list = res["data"][key]["data"]
-                if data_list:
-                    latest = data_list[-1] # 取最后一条 (最新的)
-                    date_str = latest[0]   # 日期 "2024-01-30"
-                    pct = float(latest[2]) # 涨跌幅
-                    return pct, date_str
+        # 返回格式: v_jj009968="009968~名称~最新净值~昨日净值~..."
+        if '="' in r.text:
+            data = r.text.split('="')[1].strip('"').split('~')
+            if len(data) > 4:
+                nav_latest = float(data[3]) # 最新净值 (下标3)
+                nav_prev = float(data[4])   # 上次净值 (下标4)
+                
+                # 计算涨跌幅
+                if nav_prev > 0:
+                    pct = ((nav_latest - nav_prev) / nav_prev) * 100
+                    return pct
     except: pass
-    return None, None
+    return None
 
 # === 🚀 主程序 ===
 def main():
@@ -243,7 +244,6 @@ def main():
                                 val=0; w=0
                                 for s in i['holdings']:
                                     if s['code'] in prices:
-                                        # 🔥 这里的 key 改为 'pct'
                                         val += prices[s['code']]['pct']*s['weight']; w+=s['weight']
                                 snap[n] = val/w if w>0 else 0
                             hist, hsha = load_json('history.json')
@@ -264,18 +264,16 @@ def main():
                         for idx, (n, i) in enumerate(funds_config.items()):
                             if n in audited: bar.progress((idx+1)/len(funds_config)); continue
                             
-                            # 获取昨日官方数据 (使用腾讯接口)
                             f_code = None
                             short_name = n.split('(')[0]
                             for k_map, v_map in FUND_CODES_MAP.items():
                                 if k_map in short_name or short_name in k_map:
                                     f_code = v_map; break
                             
-                            off_pct, off_date = get_latest_official(f_code)
+                            off_pct = get_latest_official(f_code)
                             raw = history[last].get(n)
                             
                             if off_pct is not None and raw and raw != 0:
-                                # 简单审计逻辑：修正系数
                                 new_f = (i['factor']*0.8) + ((off_pct/raw)*0.2)
                                 funds_config[n]['factor'] = round(new_f, 4)
                                 cur_succ[n] = round(new_f, 4)
@@ -289,7 +287,7 @@ def main():
                         else: st.info("No updates")
 
     # ==========================================
-    # 👇 主展示区 (实时看板)
+    # 👇 主展示区
     # ==========================================
     if "持仓管理" not in str(mode) and "持仓管理" not in str(action_mode):
         placeholder = st.empty()
@@ -305,12 +303,10 @@ def main():
                 total_p = 0; total_base = 0; cards = []; msg = None
                 
                 for name, info in funds_config.items():
-                    # 1. 计算实时估值
                     val=0; w=0; stocks=[]
                     for s in info['holdings']:
                         d = market.get(s['code'])
                         if d:
-                            # 🔥 所有的计算都用 'pct'
                             val += d['pct']*s['weight']; w += s['weight']
                             if len(stocks)<3: stocks.append(d)
                     
@@ -318,18 +314,17 @@ def main():
                     profit = info.get('holding_value', 0) * est / 100
                     total_p += profit; total_base += info.get('holding_value', 0)
 
-                    # 2. 获取昨日官方净值 (用于对比)
+                    # 获取昨日官方净值
                     short_name = name.split('(')[0]
                     f_code = None
                     for k_map, v_map in FUND_CODES_MAP.items():
-                        if k_map in short_name or short_name in k_map:
+                        # 去掉空格防止匹配失败
+                        if k_map in short_name.strip() or short_name.strip() in k_map:
                             f_code = v_map; break
                     
-                    last_pct, last_date = get_latest_official(f_code)
+                    last_pct = get_latest_official(f_code)
 
-                    # 3. 信号判断
                     bench_code, bench_name = get_benchmark_code(name)
-                    # 🔥 基准也用 'pct'
                     bench_val = market.get(bench_code, {}).get('pct', 0)
                     
                     sig_type = None; sig_desc = ""; act_adv = ""
@@ -351,12 +346,11 @@ def main():
                         "name": short_name, "full_name": name,
                         "est": est, "profit": profit, "principal": info.get('holding_value', 0),
                         "stocks": stocks, "sig_type": sig_type, "sig_desc": sig_desc, "act_adv": act_adv,
-                        "last_pct": last_pct # 存入数据
+                        "last_pct": last_pct
                     })
                 
                 if msg: st.toast(msg)
 
-                # 顶部总览
                 st.markdown("<br>", unsafe_allow_html=True)
                 c1, c2 = st.columns([1.8, 1])
                 p_disp = "****" if zen_mode else f"{total_p:+.2f}"
@@ -373,19 +367,16 @@ def main():
                     elif card['sig_type']=="SELL": suffix += " 🔥 止盈"
                     
                     with st.expander(f"{icon} {card['name']}{suffix}"):
-                        # 审计胶囊
                         for k, v in AUDIT_MEMO.items():
                             if k in card['full_name']:
                                 st.markdown(f"<div class='audit-pill' style='background-color:{v['color']}; color:{v['text_color']};'><strong>{v['tag']}</strong> | {v['text']}</div>", unsafe_allow_html=True)
                                 break
                         
-                        # 信号
                         if card['sig_type']:
                             cls = "signal-buy" if card['sig_type']=="BUY" else "signal-sell"
                             icon_s = "🎯" if card['sig_type']=="BUY" else "🔥"
                             st.markdown(f"<div class='{cls}'><div><div>{icon_s} {card['sig_desc']}</div><div style='font-size:15px; margin-top:4px'>👉 {card['act_adv']}</div></div></div>", unsafe_allow_html=True)
 
-                        # 详情数据区
                         kc1, kc2 = st.columns([1.1, 2])
                         col_c = "#ff3b30" if card['profit']>0 else "#34c759"
                         prof_s = "<span style='color:#aaa'>****</span>" if zen_mode else f"￥{card['profit']:+.1f}"
@@ -396,6 +387,9 @@ def main():
                         if card['last_pct'] is not None:
                             l_col = "#ff3b30" if card['last_pct']>0 else "#34c759"
                             last_html = f"<div style='margin-top:6px; font-size:11px; color:#aaa'>昨日实际 <span class='yesterday-tag' style='color:{l_col}'>{card['last_pct']:+.2f}%</span></div>"
+                        else:
+                            # 如果还是抓不到，显示占位符，方便确认功能已加载
+                            last_html = f"<div style='margin-top:6px; font-size:11px; color:#ddd'>昨日实际 <span class='yesterday-tag' style='color:#ccc'>⏳ --%</span></div>"
 
                         kc1.markdown(f"""
                         <div class='detail-box'>
@@ -410,7 +404,6 @@ def main():
 
                         rows = ""
                         for i, s in enumerate(card['stocks']):
-                            # 🔥 这里也必须用 'pct'
                             bg = "#ff3b30" if s['pct']>0 else ("#34c759" if s['pct']<0 else "#8e8e93")
                             rows += f"<div class='ios-row'><div class='ios-index'>{i+1}</div><div class='ios-name'>{s['name']}</div><div class='ios-pill' style='background-color:{bg}'>{s['pct']:+.2f}%</div></div>"
                         kc2.markdown(f"<div class='ios-list-container'>{rows}</div>", unsafe_allow_html=True)
@@ -420,7 +413,6 @@ def main():
                 mc1, mc2, mc3 = st.columns(3)
                 for i, (k, v) in enumerate(MARKET_INDICES.items()):
                     d = market.get(k)
-                    # 🔥 底部大盘也用 'pct'
                     if d: [mc1, mc2, mc3][i].metric(v, f"{d['pct']:.2f}%")
 
             time.sleep(30)
