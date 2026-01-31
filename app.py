@@ -24,7 +24,8 @@ AUDIT_MEMO = {
     }
 }
 
-# 🛠️ 基金代码映射表 (已更新为你提供的 C 类代码)
+# 🛠️ 基金代码映射表 (C类份额 - 已锁定)
+# 用于抓取“昨日官方净值”进行对比
 FUND_CODES_MAP = {
     '摩根均衡': '021274',  # 摩根均衡精选混合C
     '泰康新锐': '017366',  # 泰康新锐成长混合C
@@ -55,15 +56,27 @@ st.markdown("""
     footer {visibility: hidden;}
     header {visibility: hidden;}
     
-    /* 按钮 & 卡片优化 */
+    /* 按钮优化 */
     div[data-testid="stPopover"] > button {
         border-radius: 20px; background: rgba(255,255,255,0.8); border: 1px solid #eee; color: #555;
     }
+
+    /* 🔥 修复：大卡片强制等高对齐 */
     div[data-testid="stMetric"] {
-        background: rgba(255, 255, 255, 0.65); backdrop-filter: blur(16px);
-        border: 1px solid rgba(255, 255, 255, 0.6); border-radius: 20px; padding: 15px 20px;
+        background: rgba(255, 255, 255, 0.65); 
+        backdrop-filter: blur(16px);
+        border: 1px solid rgba(255, 255, 255, 0.6); 
+        border-radius: 20px; 
+        padding: 15px 20px;
         box-shadow: 0 8px 32px rgba(31, 38, 135, 0.05);
+        /* 强制高度统一 */
+        min-height: 115px !important; 
+        max-height: 115px !important;
+        display: flex;
+        flex-direction: column;
+        justify-content: center;
     }
+
     div[data-testid="stExpander"] {
         border: none; box-shadow: 0 8px 24px rgba(0,0,0,0.03);
         border-radius: 16px; background-color: rgba(255, 255, 255, 0.5);
@@ -153,30 +166,23 @@ def get_realtime_price(stock_codes):
                             current = float(data[3]); close = float(data[4])
                             if close > 0: pct = ((current - close) / close) * 100
                         
-                        # 简单熔断
                         if abs(pct) > 60: pct = 0.0
                         price_data[code] = {'name': name, 'pct': pct}
                 except: continue
         return price_data
     except: return None
 
-# 2. 抓基金官方净值 (基于 Debug 结果优化)
+# 2. 抓基金官方净值 (基于腾讯接口 + C类代码)
 def get_latest_official(fund_code):
     if not fund_code: return None
-    
-    # 🚫 黑名单：红利低波不抓取
-    if fund_code == "512890": return None
+    if fund_code == "512890": return None # ETF跳过
 
-    # 使用 qt.gtimg.cn，jj前缀
     url = f"http://qt.gtimg.cn/q=jj{fund_code}"
     try:
         r = requests.get(url, timeout=2)
-        # 返回格式: v_jj009968="009968~名称~...~...~...~最新净值~累计净值~涨跌幅(Index 7)~日期~";
         if '="' in r.text:
             content = r.text.split('="')[1].strip('";')
             data = content.split('~')
-            
-            # Index 7 是涨跌幅
             if len(data) > 8:
                 pct = float(data[7]) 
                 return pct
@@ -304,7 +310,6 @@ def main():
                 total_p = 0; total_base = 0; cards = []; msg = None
                 
                 for name, info in funds_config.items():
-                    # 1. 计算实时估值
                     val=0; w=0; stocks=[]
                     for s in info['holdings']:
                         d = market.get(s['code'])
@@ -316,7 +321,6 @@ def main():
                     profit = info.get('holding_value', 0) * est / 100
                     total_p += profit; total_base += info.get('holding_value', 0)
 
-                    # 2. 获取昨日官方净值 (使用新逻辑)
                     short_name = name.split('(')[0]
                     f_code = None
                     for k_map, v_map in FUND_CODES_MAP.items():
@@ -325,7 +329,6 @@ def main():
                     
                     last_pct = get_latest_official(f_code)
 
-                    # 3. 信号判断
                     bench_code, bench_name = get_benchmark_code(name)
                     bench_val = market.get(bench_code, {}).get('pct', 0)
                     
@@ -348,16 +351,18 @@ def main():
                         "name": short_name, "full_name": name,
                         "est": est, "profit": profit, "principal": info.get('holding_value', 0),
                         "stocks": stocks, "sig_type": sig_type, "sig_desc": sig_desc, "act_adv": act_adv,
-                        "last_pct": last_pct # 存入数据
+                        "last_pct": last_pct
                     })
                 
                 if msg: st.toast(msg)
 
-                # 顶部总览
+                # 顶部总览 (🔥 修复：移除 delta 以对齐高度)
                 st.markdown("<br>", unsafe_allow_html=True)
                 c1, c2 = st.columns([1.8, 1])
                 p_disp = "****" if zen_mode else f"{total_p:+.2f}"
-                c1.metric("今日家庭收益 (元)", p_disp, delta=None if zen_mode else f"{total_p:+.2f}")
+                # delta=None 移除重复的绿色胶囊
+                c1.metric("今日家庭收益 (元)", p_disp, delta=None) 
+                
                 rate = (total_p/total_base*100) if total_base>0 else 0
                 c2.metric("收益率", f"{rate:+.2f}%")
 
@@ -370,28 +375,23 @@ def main():
                     elif card['sig_type']=="SELL": suffix += " 🔥 止盈"
                     
                     with st.expander(f"{icon} {card['name']}{suffix}"):
-                        # 审计胶囊
                         for k, v in AUDIT_MEMO.items():
                             if k in card['full_name']:
                                 st.markdown(f"<div class='audit-pill' style='background-color:{v['color']}; color:{v['text_color']};'><strong>{v['tag']}</strong> | {v['text']}</div>", unsafe_allow_html=True)
                                 break
                         
-                        # 信号
                         if card['sig_type']:
                             cls = "signal-buy" if card['sig_type']=="BUY" else "signal-sell"
                             icon_s = "🎯" if card['sig_type']=="BUY" else "🔥"
                             st.markdown(f"<div class='{cls}'><div><div>{icon_s} {card['sig_desc']}</div><div style='font-size:15px; margin-top:4px'>👉 {card['act_adv']}</div></div></div>", unsafe_allow_html=True)
 
-                        # 详情数据区
                         kc1, kc2 = st.columns([1.1, 2])
                         col_c = "#ff3b30" if card['profit']>0 else "#34c759"
                         prof_s = "<span style='color:#aaa'>****</span>" if zen_mode else f"￥{card['profit']:+.1f}"
                         prin_s = "****" if zen_mode else f"￥{card['principal']:,}"
 
-                        # 昨日对比显示 (根据 Debug 修复)
                         last_html = ""
                         if card['last_pct'] is not None:
-                            # 颜色判断：涨红跌绿
                             l_col = "#ff3b30" if card['last_pct']>0 else ("#34c759" if card['last_pct']<0 else "#888")
                             last_html = f"<div style='margin-top:6px; font-size:11px; color:#aaa'>昨日实际 <span class='yesterday-tag' style='color:{l_col}'>{card['last_pct']:+.2f}%</span></div>"
                         
