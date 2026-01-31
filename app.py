@@ -3,42 +3,172 @@ import requests
 import time
 import json
 import pandas as pd
-import re
 from datetime import datetime, timedelta
 from github import Github
 
-# === 🎨 1. 页面配置与 CSS 魔法 (Apple Glassmorphism V5.2) ===
+# ==========================================
+# 0. 🎯 核心配置：人工审计日志 (Audit Memo)
+# ==========================================
+# 这里就是你要的“审计胶囊”配置
+AUDIT_MEMO = {
+    "摩根均衡": {
+        "tag": "⚠️ 偏离较高", 
+        "text": "上周偏离 -0.7%，需注意误差", 
+        "color": "#FFF3CD", # 浅橙色背景
+        "text_color": "#856404" # 深褐色文字
+    },
+    "泰康新锐": {
+        "tag": "✅ 准确率高", 
+        "text": "基本跟净值一致，可信度高", 
+        "color": "#D4EDDA", # 浅绿色背景
+        "text_color": "#155724" # 深绿色文字
+    },
+    "财通优选": {
+        "tag": "👌 偏差可控", 
+        "text": "偏离值可接受，参考性强", 
+        "color": "#D1ECF1", # 浅蓝色背景
+        "text_color": "#0C5460" # 深蓝色文字
+    }
+}
+
+# === 🎨 1. 页面配置与 CSS 魔法 (Apple Glassmorphism V5.1) ===
 st.set_page_config(
-    page_title="Family Wealth V5.2",
+    page_title="Family Wealth",
     page_icon="💎",
     layout="centered",
     initial_sidebar_state="collapsed"
 )
 
-# 注入 CSS
+# 注入 CSS：极光背景 + 信号卡片 + 禅模式样式 + 审计胶囊样式
 st.markdown("""
     <style>
-    /* 全局极光背景 */
+    /* 1. 全局极光背景 */
     .stApp {
         background: radial-gradient(circle at 10% 20%, rgba(255, 230, 240, 0.4) 0%, rgba(255, 255, 255, 0) 40%),
                     radial-gradient(circle at 90% 80%, rgba(230, 240, 255, 0.4) 0%, rgba(255, 255, 255, 0) 40%),
                     #fdfdfd;
         font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Helvetica Neue", sans-serif;
     }
-    [data-testid="stSidebar"] {display: none;}
-    header {visibility: hidden;}
-    footer {visibility: hidden;}
     
-    /* 详情卡片美化 */
+    /* 2. 隐藏无关元素 */
+    [data-testid="stSidebar"] {display: none;}
+    [data-testid="stSidebarCollapsedControl"] {display: none;}
+    #MainMenu {visibility: hidden;}
+    footer {visibility: hidden;}
+    header {visibility: hidden;}
+    
+    /* 3. Settings 按钮 */
+    div[data-testid="stPopover"] > button {
+        border-radius: 20px;
+        border: 1px solid rgba(255, 255, 255, 0.6);
+        background-color: rgba(255, 255, 255, 0.6);
+        backdrop-filter: blur(10px);
+        color: #666;
+        font-size: 13px;
+        padding: 4px 12px;
+        box-shadow: 0 2px 10px rgba(0,0,0,0.03);
+        transition: all 0.2s;
+    }
+    div[data-testid="stPopover"] > button:hover {
+        background-color: #fff;
+        color: #007aff;
+        transform: scale(1.02);
+        box-shadow: 0 4px 12px rgba(0,122,255,0.15);
+        border-color: #007aff;
+    }
+
+    /* 4. Popover 内部美化 */
+    div[data-testid="stPopoverBody"] {
+        background-color: rgba(255, 255, 255, 0.9);
+        backdrop-filter: blur(20px);
+        border-radius: 16px;
+        border: 1px solid rgba(255,255,255,0.5);
+        padding: 15px !important;
+    }
+    div[role="radiogroup"] label > div:first-child { display: none !important; }
+    div[role="radiogroup"] label {
+        background-color: rgba(255, 255, 255, 0.6);
+        padding: 12px 15px !important;
+        border-radius: 12px !important;
+        margin-bottom: 8px !important;
+        border: 1px solid rgba(0,0,0,0.05);
+        transition: all 0.2s ease;
+        display: flex; width: 100%; color: #444;
+    }
+    div[role="radiogroup"] label:hover { background-color: #f5f5f7; transform: translateX(2px); }
+    div[role="radiogroup"] [data-testid="stMarkdownContainer"] p { font-size: 14px; font-weight: 500; margin: 0; }
+
+    /* 5. 收益率大卡片 */
+    div[data-testid="stMetric"] {
+        background: rgba(255, 255, 255, 0.65);
+        backdrop-filter: blur(16px);
+        border: 1px solid rgba(255, 255, 255, 0.6);
+        padding: 15px 20px;
+        border-radius: 20px;
+        box-shadow: 0 8px 32px rgba(31, 38, 135, 0.05);
+        min-height: 115px !important; 
+        max-height: 115px !important;
+        display: flex;
+        flex-direction: column;
+        justify-content: center;
+    }
+    
+    /* 6. 基金卡片 & 列表 */
+    div[data-testid="stExpander"] {
+        border: none;
+        box-shadow: 0 8px 24px rgba(0,0,0,0.03);
+        border-radius: 16px;
+        background-color: rgba(255, 255, 255, 0.5);
+        backdrop-filter: blur(10px);
+        margin-bottom: 15px;
+        overflow: hidden;
+    }
+    .ios-list-container { display: flex; flex-direction: column; width: 100%; }
+    .ios-row { display: flex; align-items: center; justify-content: space-between; padding: 10px 0; border-bottom: 1px solid rgba(0,0,0,0.06); width: 100%; }
+    .ios-row:last-child { border-bottom: none; }
+    .ios-index { font-size: 12px; color: #aaa; width: 24px; font-weight: 600; margin-right: 8px; }
+    .ios-name { font-size: 14px; color: #333; font-weight: 500; flex: 1; margin-right: 10px; }
+    .ios-pill { padding: 4px 10px; border-radius: 6px; font-size: 13px; font-weight: 600; min-width: 65px; text-align: right; color: white; font-family: -apple-system; }
     .detail-box { background: rgba(255,255,255,0.6); padding: 15px; border-radius: 12px; border: 1px solid rgba(255,255,255,0.4); }
     
-    /* 信号提示 */
-    .signal-buy { background-color: #f6ffed; border: 1px solid #b7eb8f; color: #389e0d; padding: 10px; border-radius: 10px; font-size: 13px; font-weight: 600; margin-bottom: 10px; }
-    .signal-sell { background-color: #fff2f0; border: 1px solid #ffccc7; color: #cf1322; padding: 10px; border-radius: 10px; font-size: 13px; font-weight: 600; margin-bottom: 10px; }
-    
-    /* 列表样式 */
-    .ios-row { display: flex; align-items: center; justify-content: space-between; padding: 8px 0; border-bottom: 1px solid rgba(0,0,0,0.06); }
-    .ios-pill { padding: 4px 10px; border-radius: 6px; font-size: 12px; font-weight: 600; color: white; min-width: 60px; text-align: center;}
+    /* 🔥 信号提示卡片样式 */
+    .signal-buy {
+        background-color: #f6ffed;
+        border: 1px solid #b7eb8f;
+        color: #389e0d;
+        padding: 10px 14px;
+        border-radius: 10px;
+        font-size: 13px;
+        font-weight: 600;
+        margin-bottom: 15px;
+        display: flex;
+        align-items: center;
+        box-shadow: 0 2px 6px rgba(56, 158, 13, 0.05);
+    }
+    .signal-sell {
+        background-color: #fff2f0;
+        border: 1px solid #ffccc7;
+        color: #cf1322;
+        padding: 10px 14px;
+        border-radius: 10px;
+        font-size: 13px;
+        font-weight: 600;
+        margin-bottom: 15px;
+        display: flex;
+        align-items: center;
+        box-shadow: 0 2px 6px rgba(207, 19, 34, 0.05);
+    }
+
+    /* 💊 审计胶囊样式 (新增) */
+    .audit-pill {
+        display: inline-block;
+        padding: 4px 12px;
+        border-radius: 20px;
+        font-size: 12px;
+        font-weight: 500;
+        margin-bottom: 12px;
+        font-family: -apple-system;
+    }
     </style>
 """, unsafe_allow_html=True)
 
@@ -46,20 +176,25 @@ st.markdown("""
 MARKET_INDICES = {
     'sh000001': '上证指数',
     'sz399006': '创业板指',
-    'hkHSTECH': '恒生科技',
-    'usNDX': '纳斯达克'
+    'hkHSTECH': '恒生科技'
 }
 
-# 基金名称到代码的映射（用于抓取东财估值）
-# 请确保这里面的名称和你 funds.json 里的名称一致（前缀匹配即可）
 FUND_CODES_MAP = {
-    '摩根均衡': '009968',
-    '泰康新锐': '009340',
-    '财通优选': '009354',
-    '红利低波': '512890' 
+    '摩根均衡C (梁鹏/周期)': '009968',
+    '泰康新锐C (韩庆/成长)': '009340',
+    '财通优选C (金梓才/AI)': '009354'
 }
 
-# === 🛠️ GitHub 与 数据获取 ===
+# === 🛠️ 辅助逻辑：智能匹配基准 ===
+def get_benchmark_code(fund_name):
+    if "周期" in fund_name or "均衡" in fund_name:
+        return 'sh000001', '上证'
+    elif "成长" in fund_name or "AI" in fund_name or "优选" in fund_name:
+        return 'sz399006', '创指'
+    else:
+        return 'sh000001', '上证'
+
+# === 🛠️ GitHub 数据库操作 ===
 
 def get_repo():
     try:
@@ -68,7 +203,9 @@ def get_repo():
         repo_name = st.secrets["repo_name"]
         g = Github(token)
         return g.get_user(username).get_repo(repo_name)
-    except: return None
+    except Exception as e:
+        st.error(f"GitHub 连接失败: {e}")
+        return None
 
 def load_json(filename):
     repo = get_repo()
@@ -76,191 +213,366 @@ def load_json(filename):
     try:
         content = repo.get_contents(filename)
         return json.loads(content.decoded_content.decode('utf-8')), content.sha
-    except: return {}, None
+    except:
+        return {}, None
 
 def save_json(filename, data, sha, message):
     repo = get_repo()
     if repo:
         new_content = json.dumps(data, indent=4, ensure_ascii=False)
-        if sha: repo.update_file(filename, message, new_content, sha)
-        else: repo.create_file(filename, message, new_content)
+        if sha:
+            repo.update_file(filename, message, new_content, sha)
+        else:
+            repo.create_file(filename, message, new_content)
 
-# 1. 腾讯实时行情 (自算基础)
+def save_factor_history(date_str, new_factors_dict):
+    history, sha = load_json('factor_history.json')
+    if not isinstance(history, dict): history = {}
+    existing_record = history.get(date_str, {})
+    existing_record.update(new_factors_dict)
+    history[date_str] = existing_record
+    save_json('factor_history.json', history, sha, f"Factor Log {date_str}")
+
+# === 🕷️ 数据获取 ===
+
 def get_realtime_price(stock_codes):
     if not stock_codes: return {}
-    url = f"http://qt.gtimg.cn/q={','.join(stock_codes)}"
+    codes_str = ",".join(stock_codes)
+    url = f"http://qt.gtimg.cn/q={codes_str}"
     try:
         r = requests.get(url, timeout=3)
+        text = r.text
         price_data = {}
-        parts = r.text.split(';')
+        parts = text.split(';')
         for part in parts:
             if '="' in part:
                 try:
-                    code = part.split('=')[0].split('_')[-1]
-                    data = part.split('="')[1].split('~')
-                    name = data[1].replace(" ", "")
-                    close = float(data[4])
-                    if close > 0:
-                        pct = ((float(data[3]) - close) / close) * 100
+                    key_raw = part.split('=')[0].strip()
+                    code = key_raw.split('_')[-1] 
+                    data = part.split('="')[1].strip('"').split('~')
+                    if len(data) > 30:
+                        name = data[1].replace(" ", "")
+                        current = float(data[3])
+                        close = float(data[4])
+                        pct = 0.0
+                        if close > 0: pct = ((current - close) / close) * 100
                         price_data[code] = {'name': name, 'change': pct}
                 except: continue
         return price_data
     except: return None
 
-# 2. 东财实时估值 (参考系)
-def get_eastmoney_valuation(fund_code):
-    if not fund_code: return None
-    timestamp = int(time.time() * 1000)
-    url = f"http://fundgz.1234567.com.cn/js/{fund_code}.js?rt={timestamp}"
+def get_official_nav(fund_code):
+    url = f"https://api.fund.eastmoney.com/f10/lsjz?fundCode={fund_code}&pageIndex=1&pageSize=1"
+    headers = {
+        "Referer": "http://fund.eastmoney.com/",
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+    }
     try:
-        r = requests.get(url, timeout=2)
+        r = requests.get(url, headers=headers, timeout=5)
         if r.status_code == 200:
-            match = re.search(r'jsonpgz\((.*?)\);', r.text)
-            if match:
-                data = json.loads(match.group(1))
-                return float(data['gszzl'])
-    except: return None
-    return None
-
-def get_benchmark_code(fund_name):
-    if "纳斯达克" in fund_name or "QDII" in fund_name: return 'usNDX', '纳指'
-    if "红利" in fund_name: return 'sh000001', '上证'
-    if "周期" in fund_name or "均衡" in fund_name: return 'sh000001', '上证'
-    return 'sz399006', '创指'
+            res = r.json()
+            if "Data" in res and "LSJZList" in res["Data"]:
+                data_list = res["Data"]["LSJZList"]
+                if len(data_list) > 0:
+                    latest_data = data_list[0]
+                    return float(latest_data["JZZZL"]), latest_data["FSRQ"]
+    except: pass
+    return None, None
 
 # === 🚀 主程序 ===
 def main():
     funds_config, config_sha = load_json('funds.json')
-    if not funds_config: st.warning("请先配置 funds.json"); st.stop()
+    if not funds_config: st.stop()
 
-    # 顶部状态栏
+    # ==========================================
+    # 🌟 顶部导航栏
+    # ==========================================
+    
     bj_time = datetime.utcnow() + timedelta(hours=8)
-    col_t1, col_t2 = st.columns([3, 1])
-    with col_t1:
-        st.caption(f"Last Updated: {bj_time.strftime('%H:%M:%S')}")
-        st.markdown("<h3 style='margin:0'>Family Wealth V5.2</h3>", unsafe_allow_html=True)
+    now_hour = bj_time.hour
+    greeting = "Good Morning ☀️" if 5 <= now_hour < 12 else "Good Afternoon ☕" if 12 <= now_hour < 18 else "Good Evening 🌙"
 
-    # 设置菜单
+    top_col1, top_col2 = st.columns([3, 1])
+    
+    with top_col1:
+        st.caption(f"{greeting} | {bj_time.strftime('%m-%d %H:%M')}")
+        st.markdown(f"<h2 style='margin-top:-10px; color:#333; letter-spacing:0.5px; font-weight:300'>Family Wealth</h2>", unsafe_allow_html=True)
+
+    # 🔥 禅模式状态初始化 (默认关闭)
     zen_mode = False
-    with col_t2:
-        with st.popover("⚙️", use_container_width=True):
+
+    with top_col2:
+        with st.popover("⚙️ Settings", use_container_width=True):
             st.caption("Mode")
-            zen_mode = st.toggle("🧘 禅模式", value=False)
+            # 🔥 禅模式开关
+            zen_mode = st.toggle("🧘 禅模式 (隐藏金额)", value=False)
+            st.markdown("<div style='height:10px'></div>", unsafe_allow_html=True)
+
+            st.caption("Views")
+            mode = st.radio("Navigation", ["📡  实时看板", "💰  持仓管理"], label_visibility="collapsed", key="nav_radio")
+            st.markdown("<div style='height:10px'></div>", unsafe_allow_html=True)
             st.caption("Actions")
-            if st.button("更新持仓配置"):
-                st.toast("请直接修改 GitHub 文件")
+            action_mode = st.radio("Tools", ["💾  收盘存证", "⚖️  晚间审计"], label_visibility="collapsed", index=None, key="action_radio")
 
-    # 获取行情
-    all_codes = list(MARKET_INDICES.keys())
-    for f in funds_config.values():
-        for s in f['holdings']: all_codes.append(s['code'])
-    
-    market_data = get_realtime_price(list(set(all_codes)))
-    if not market_data: st.error("行情接口连接失败"); st.stop()
+            current_selection = action_mode if action_mode else mode
 
-    # 计算与展示
-    total_profit = 0
-    total_principal = 0
-    
-    # 遍历计算
-    cards = []
-    for name, info in funds_config.items():
-        # 自算估值
-        val = 0; w = 0; stocks = []
-        for s in info['holdings']:
-            d = market_data.get(s['code'])
-            if d:
-                val += d['change'] * s['weight']; w += s['weight']
-                if len(stocks) < 3: stocks.append(d)
+            # 💰 持仓管理
+            if current_selection == "💰  持仓管理":
+                st.divider()
+                st.info("Manage Holdings & Strategy")
+                with st.form("holding_form_pop"):
+                    new_holdings = {}
+                    new_bases = {}
+                    
+                    for name, info in funds_config.items():
+                        short_name = name.split('(')[0]
+                        st.markdown(f"**{short_name}**")
+                        col_h1, col_h2 = st.columns(2)
+                        
+                        current_val = info.get('holding_value', 0)
+                        val_h = col_h1.number_input(f"持仓 (¥)", value=float(current_val), step=100.0, key=f"h_{name}")
+                        
+                        current_base = info.get('base_unit', 1000)
+                        val_b = col_h2.number_input(f"单次加仓 (¥)", value=float(current_base), step=100.0, key=f"b_{name}")
+                        
+                        new_holdings[name] = val_h
+                        new_bases[name] = val_b
+                        st.divider()
+                    
+                    if st.form_submit_button("Save Changes"):
+                        for name in funds_config.keys():
+                            funds_config[name]['holding_value'] = new_holdings[name]
+                            funds_config[name]['base_unit'] = new_bases[name]
+                        save_json('funds.json', funds_config, config_sha, "Update Config")
+                        st.toast("Updated Successfully!")
+                        time.sleep(1); st.rerun()
+
+            elif current_selection == "💾  收盘存证":
+                st.divider()
+                if st.button("📸 Run Snapshot", type="primary", use_container_width=True):
+                    with st.spinner("Processing..."):
+                        snapshot_data = {}
+                        all_codes = []
+                        for f in funds_config.values():
+                            for s in f['holdings']: all_codes.append(s['code'])
+                        prices = get_realtime_price(list(set(all_codes)))
+                        if prices:
+                            today_str = bj_time.strftime("%Y-%m-%d")
+                            for name, info in funds_config.items():
+                                val = 0; w = 0
+                                for s in info['holdings']:
+                                    if s['code'] in prices:
+                                        val += prices[s['code']]['change'] * s['weight']; w += s['weight']
+                                snapshot_data[name] = val / w if w > 0 else 0
+                            history, hist_sha = load_json('history.json')
+                            history[today_str] = snapshot_data
+                            save_json('history.json', history, hist_sha, f"Snapshot {today_str}")
+                            st.success(f"Snapshot Saved: {today_str}")
+
+            elif current_selection == "⚖️  晚间审计":
+                st.divider()
+                if st.button("🚀 Start Audit", type="primary", use_container_width=True):
+                    history, _ = load_json('history.json')
+                    factor_hist, _ = load_json('factor_history.json')
+                    if history:
+                        last_date = sorted(history.keys())[-1]
+                        audited = factor_hist.get(last_date, {}) if factor_hist else {}
+                        updates = []; need_save = False; current_success = {}
+                        progress = st.progress(0)
+                        for idx, (name, info) in enumerate(funds_config.items()):
+                            if name in audited: progress.progress((idx+1)/len(funds_config)); continue
+                            raw = history[last_date].get(name)
+                            code = FUND_CODES_MAP.get(name)
+                            if raw is not None and code:
+                                off_pct, off_date = get_official_nav(code)
+                                if off_date and off_date >= last_date and raw != 0:
+                                    new_f = (info['factor'] * 0.8) + ((off_pct / raw) * 0.2)
+                                    funds_config[name]['factor'] = round(new_f, 4)
+                                    current_success[name] = round(new_f, 4)
+                                    need_save = True
+                            progress.progress((idx+1)/len(funds_config))
+                        if need_save:
+                            save_json('funds.json', funds_config, config_sha, "Audit")
+                            save_factor_history(last_date, current_success)
+                            st.success("Factors Optimized!"); time.sleep(1); st.rerun()
+                        else: st.info("No updates needed today")
+
+            st.divider()
+            with st.expander("📊 Stability Check"):
+                fh, _ = load_json('factor_history.json')
+                if fh: st.line_chart(pd.DataFrame.from_dict(fh, orient='index').sort_index())
+
+    # ==========================================
+    # 👇 主展示区 (全域火控版 + 禅模式)
+    # ==========================================
+    if "持仓管理" not in str(mode) and "持仓管理" not in str(action_mode):
+        placeholder = st.empty()
         
-        my_est = (val / w * info.get('factor', 1.0)) if w > 0 else 0
+        all_codes = list(MARKET_INDICES.keys())
+        for f in funds_config.values():
+            for s in f['holdings']: all_codes.append(s['code'])
+        all_codes = list(set(all_codes))
         
-        # 基础数据
-        principal = info.get('holding_value', 0)
-        profit = principal * my_est / 100
-        total_profit += profit; total_principal += principal
-        
-        # 信号逻辑
-        bench_code, bench_name = get_benchmark_code(name)
-        bench_val = market_data.get(bench_code, {}).get('change', 0)
-        
-        signal = None
-        if my_est < -2.5 and my_est < bench_val:
-            signal = {"type": "BUY", "msg": f"跑输{bench_name} {abs(my_est-bench_val):.1f}%"}
-        elif my_est > 3.0 and my_est > (bench_val + 1.5):
-            signal = {"type": "SELL", "msg": f"跑赢{bench_name} {abs(my_est-bench_val):.1f}%"}
-            
-        cards.append({
-            "name": name, "est": my_est, "profit": profit, 
-            "principal": principal, "stocks": stocks, "signal": signal
-        })
+        while True:
+            with placeholder.container():
+                market_data = get_realtime_price(all_codes)
+                if not market_data:
+                    st.warning("Connecting..."); time.sleep(2); continue
+                
+                total_profit = 0
+                total_principal = 0
+                cards_data = []
+                signal_msg = None
+                
+                for name, info in funds_config.items():
+                    factor = info.get('factor', 1.0)
+                    principal = info.get('holding_value', 0)
+                    base_unit = info.get('base_unit', 1000) 
+                    
+                    val = 0; w = 0; stocks = []
+                    for s in info['holdings']:
+                        d = market_data.get(s['code'])
+                        if d:
+                            val += d['change'] * s['weight']; w += s['weight']
+                            if len(stocks) < 3: 
+                                stocks.append({"name": d['name'], "pct": d['change']})
+                    
+                    est = (val / w * factor) if w > 0 else 0
+                    profit = principal * est / 100
+                    total_profit += profit
+                    total_principal += principal
+                    
+                    # 信号逻辑
+                    bench_code, bench_name = get_benchmark_code(name)
+                    bench_val = 0
+                    if bench_code in market_data: bench_val = market_data[bench_code]['change']
+                    
+                    signal_type = None 
+                    signal_desc = ""
+                    action_advice = ""
+                    
+                    # 1. 🎯 买入
+                    if est < -2.5 and est < bench_val:
+                        signal_type = "BUY"
+                        multiplier = 2 if est < -4.0 else 1
+                        buy_amt = base_unit * multiplier
+                        signal_desc = f"超跌错杀：跑输{bench_name} {abs(est-bench_val):.1f}%"
+                        action_advice = f"建议加仓: +¥{buy_amt:,}"
+                        if not signal_msg: signal_msg = "🎯 出现加仓机会"
 
-    # 1. 顶部总览
-    m1, m2 = st.columns([1.5, 1])
-    if zen_mode:
-        m1.metric("今日预估盈亏", "****")
-    else:
-        m1.metric("今日预估盈亏", f"{total_profit:+.2f}", f"{total_profit:+.2f} 元")
-    
-    rate = (total_profit/total_principal*100) if total_principal>0 else 0
-    m2.metric("整体收益率", f"{rate:+.2f}%")
+                    # 2. 🔥 止盈
+                    elif est > 3.0 and est > (bench_val + 1.5):
+                        signal_type = "SELL"
+                        signal_desc = f"短期过热：跑赢{bench_name} {abs(est-bench_val):.1f}%"
+                        action_advice = "建议卖出: 1/4 持仓"
+                        if not signal_msg: signal_msg = "🔥 出现止盈机会"
 
-    st.divider()
+                    cards_data.append({
+                        "name": name.split('(')[0],
+                        "full_name": name, # 保留全名用于匹配胶囊
+                        "est": est,
+                        "profit": profit,
+                        "principal": principal,
+                        "stocks": stocks,
+                        "signal_type": signal_type,
+                        "signal_desc": signal_desc,
+                        "action_advice": action_advice
+                    })
+                
+                # Toast
+                if signal_msg: st.toast(signal_msg)
 
-    # 2. 持仓卡片
-    for c in cards:
-        # 标题处理
-        icon = "🔥" if c['signal'] and c['signal']['type']=="SELL" else ("🎯" if c['signal'] and c['signal']['type']=="BUY" else "💰")
-        title = f"{icon} {c['name'].split('(')[0]} {c['est']:+.2f}%"
-        
-        with st.expander(title):
-            # 信号提示
-            if c['signal']:
-                cls = "signal-buy" if c['signal']['type']=="BUY" else "signal-sell"
-                st.markdown(f"<div class='{cls}'>{c['signal']['type']} | {c['signal']['msg']}</div>", unsafe_allow_html=True)
-            
-            # 🔥 双重估值校验
-            # 尝试匹配东财代码
-            ref_est = None
-            for key, code in FUND_CODES_MAP.items():
-                if key in c['name']:
-                    ref_est = get_eastmoney_valuation(code)
-                    break
-            
-            c1, c2 = st.columns([1.2, 2])
-            
-            # 左侧：数据区
-            p_str = "****" if zen_mode else f"¥{c['profit']:+.1f}"
-            
-            est_html = f"""
-            <div class='detail-box'>
-                <div style='color:#888; font-size:12px'>今日盈亏</div>
-                <div style='font-size:20px; font-weight:bold; color:{'#ff3b30' if c['profit']>0 else '#34c759'}'>{p_str}</div>
-                <div style='margin: 8px 0; border-bottom:1px dashed #ddd'></div>
-                <div style='display:flex; justify-content:space-between'>
-                    <div><span style='color:#999; font-size:11px'>我的模型</span><br><b>{c['est']:+.2f}%</b></div>
-                    <div style='text-align:right'><span style='color:#999; font-size:11px'>东财估值</span><br><span style='color:#666'>{f'{ref_est:+.2f}%' if ref_est is not None else '--'}</span></div>
-                </div>
-            </div>
-            """
-            c1.markdown(est_html, unsafe_allow_html=True)
-            
-            # 右侧：持仓前三
-            rows = ""
-            for s in c['stocks']:
-                bg = "#ff3b30" if s['change']>0 else "#34c759"
-                rows += f"<div class='ios-row'><span>{s['name']}</span><span class='ios-pill' style='background:{bg}'>{s['change']:+.2f}%</span></div>"
-            c2.markdown(f"<div>{rows}</div>", unsafe_allow_html=True)
+                # 1. 💰 总盈亏 (禅模式屏蔽逻辑)
+                st.markdown("<br>", unsafe_allow_html=True)
+                main_col1, main_col2 = st.columns([1.8, 1])
+                
+                if zen_mode:
+                    main_col1.metric("今日家庭收益 (元)", "****", delta=None)
+                else:
+                    main_col1.metric("今日家庭收益 (元)", f"{total_profit:+.2f}", delta=f"{total_profit:+.2f}")
+                
+                yield_rate = (total_profit/total_principal*100) if total_principal > 0 else 0
+                main_col2.metric("收益率", f"{yield_rate:+.2f}%", delta_color="normal")
+                
+                # 2. 💎 持仓列表
+                st.markdown("<div style='margin-bottom: 12px;'></div>", unsafe_allow_html=True)
+                st.markdown("<span style='color:#999; font-size:12px; letter-spacing:1px; margin-left:2px; font-weight:500'>PORTFOLIO</span>", unsafe_allow_html=True)
+                
+                for card in cards_data:
+                    icon = "👑" if card['est'] > 0 else "📿"
+                    
+                    title_suffix = f" {card['est']:+.2f}%"
+                    if card['signal_type'] == "BUY": title_suffix += " 🎯 机会"
+                    elif card['signal_type'] == "SELL": title_suffix += " 🔥 止盈"
+                    
+                    title = f"{icon} {card['name']}{title_suffix}"
+                    
+                    with st.expander(title):
+                        # ----------------------------------------------------
+                        # 🔥 插入审计胶囊 (AUDIT PILL) - 抗干扰版
+                        # ----------------------------------------------------
+                        pill_html = ""
+                        for k, v in AUDIT_MEMO.items():
+                            if k in card['full_name']: # 匹配全名
+                                # 使用列表拼接，彻底防止 f-string 缩进引发的 Markdown 渲染错误
+                                html_parts = [
+                                    f"<div class='audit-pill' style='background-color:{v['color']}; color:{v['text_color']};'>",
+                                    f"<strong>{v['tag']}</strong> | {v['text']}",
+                                    "</div>"
+                                ]
+                                pill_html = "".join(html_parts)
+                                break
+                        
+                        if pill_html:
+                            st.markdown(pill_html, unsafe_allow_html=True)
+                        # ----------------------------------------------------
 
-    # 3. 底部大盘
-    st.markdown("<br><div style='color:#ccc; font-size:12px; text-align:center'>MARKET OVERVIEW</div>", unsafe_allow_html=True)
-    cols = st.columns(len(MARKET_INDICES))
-    for i, (code, name) in enumerate(MARKET_INDICES.items()):
-        d = market_data.get(code)
-        if d: cols[i].metric(name, f"{d['change']:+.2f}%")
+                        # 信号区域 (不受禅模式影响，必须清晰)
+                        if card['signal_type'] == "BUY":
+                            st.markdown(f"<div class='signal-buy'><div><div>🎯 {card['signal_desc']}</div><div style='font-size:15px; margin-top:4px'>👉 {card['action_advice']}</div></div></div>", unsafe_allow_html=True)
+                        elif card['signal_type'] == "SELL":
+                            st.markdown(f"<div class='signal-sell'><div><div>🔥 {card['signal_desc']}</div><div style='font-size:15px; margin-top:4px'>👉 {card['action_advice']}</div></div></div>", unsafe_allow_html=True)
 
-    time.sleep(30)
-    st.rerun()
+                        # 详情数据 (禅模式屏蔽逻辑)
+                        kc1, kc2 = st.columns([1.1, 2])
+                        color_code = "#ff3b30" if card['profit']>0 else "#34c759"
+                        
+                        if zen_mode:
+                            profit_display = "<span style='color:#aaa'>****</span>"
+                            principal_display = "****"
+                        else:
+                            profit_display = f"￥{card['profit']:+.1f}"
+                            principal_display = f"￥{card['principal']:,}"
+                        
+                        kc1.markdown(f"""
+                        <div class='detail-box'>
+                            <div style='font-size:12px; color:#888; margin-bottom:2px'>今日盈亏</div>
+                            <div style='font-size:20px; font-weight:600; color:{color_code}; font-family:-apple-system'>{profit_display}</div>
+                            <div style='height:15px'></div>
+                            <div style='font-size:12px; color:#888; margin-bottom:2px'>本金</div>
+                            <div style='font-size:16px; color:#333; font-weight:500'>{principal_display}</div>
+                        </div>
+                        """, unsafe_allow_html=True)
+                        
+                        list_html = "<div class='ios-list-container'>"
+                        for i, s in enumerate(card['stocks']):
+                            bg_color = "#ff3b30" if s['pct'] > 0 else ("#34c759" if s['pct'] < 0 else "#8e8e93")
+                            txt_color = "white"
+                            list_html += f"<div class='ios-row'><div class='ios-index'>{i+1}</div><div class='ios-name'>{s['name']}</div><div class='ios-pill' style='background-color:{bg_color}; color:{txt_color}'>{s['pct']:+.2f}%</div></div>"
+                        list_html += "</div>"
+                        
+                        kc2.markdown(list_html, unsafe_allow_html=True)
+
+                # 3. 🌍 底部大盘
+                st.divider()
+                st.markdown("<span style='color:#999; font-size:12px; letter-spacing:1px; margin-left:2px; font-weight:500'>MARKET INDICES</span>", unsafe_allow_html=True)
+                mc1, mc2, mc3 = st.columns(3)
+                m_cols = [mc1, mc2, mc3]
+                for i, code in enumerate(MARKET_INDICES):
+                    d = market_data.get(code)
+                    if d: m_cols[i].metric(MARKET_INDICES[code], f"{d['change']:.2f}%")
+
+            time.sleep(30)
 
 if __name__ == "__main__":
     main()
