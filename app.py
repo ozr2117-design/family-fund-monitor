@@ -5,73 +5,33 @@ from datetime import datetime
 import pytz
 
 # ==========================================
-# 1. 核心配置与人工审计日志
+# 1. 核心配置区
 # ==========================================
 AUDIT_MEMO = {
-    "摩根均衡": {
-        "tag": "⚠️ 偏离较高", 
-        "text": "上周偏离 -0.7%，需注意误差", 
-        "color": "#FFF3CD", 
-        "text_color": "#856404"
-    },
-    "泰康新锐": {
-        "tag": "✅ 准确率高", 
-        "text": "基本跟净值一致，可信度高", 
-        "color": "#D4EDDA", 
-        "text_color": "#155724"
-    },
-    "财通优选": {
-        "tag": "👌 偏差可控", 
-        "text": "偏离值可接受，参考性强", 
-        "color": "#D1ECF1", 
-        "text_color": "#0C5460"
-    }
+    "摩根均衡": {"tag": "⚠️ 偏离较高", "text": "上周偏离 -0.7%，需注意误差", "color": "#FFF3CD", "text_color": "#856404"},
+    "泰康新锐": {"tag": "✅ 准确率高", "text": "基本跟净值一致，可信度高", "color": "#D4EDDA", "text_color": "#155724"},
+    "财通优选": {"tag": "👌 偏差可控", "text": "偏离值可接受，参考性强", "color": "#D1ECF1", "text_color": "#0C5460"}
 }
 
 st.set_page_config(page_title="Family Wealth V5.1", page_icon="📈", layout="centered")
 
 # ==========================================
-# 2. 极光样式 CSS
+# 2. 样式设置 (CSS)
 # ==========================================
-st.markdown("""
-<style>
-.stApp {background: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%);}
-.fund-card {
-    background-color: rgba(255, 255, 255, 0.85);
-    padding: 20px;
-    border-radius: 15px;
-    box-shadow: 0 4px 15px rgba(0,0,0,0.05);
-    margin-bottom: 15px;
-    border: 1px solid rgba(255,255,255,0.6);
-}
-.audit-pill {
-    display: inline-block;
-    padding: 4px 12px;
-    border-radius: 20px;
-    font-size: 13px;
-    font-weight: 500;
-    margin-top: 8px;
-    margin-bottom: 5px;
-}
-h1, h2, h3, p, span, div, strong {color: #333333 !important;}
-.trend-up {color: #d9534f !important; font-weight: bold;}
-.trend-down {color: #28a745 !important; font-weight: bold;}
-.trend-flat {color: #6c757d !important; font-weight: bold;}
-</style>
-""", unsafe_allow_html=True)
+# 为了防止缩进问题，这里也采用紧凑写法
+st.markdown("""<style>.stApp {background: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%);}.fund-card {background-color: rgba(255, 255, 255, 0.85);padding: 20px;border-radius: 15px;box-shadow: 0 4px 15px rgba(0,0,0,0.05);margin-bottom: 15px;border: 1px solid rgba(255,255,255,0.6);}.audit-pill {display: inline-block;padding: 4px 12px;border-radius: 20px;font-size: 13px;font-weight: 500;margin-top: 8px;margin-bottom: 5px;}h1, h2, h3, p, span, div, strong {color: #333333 !important;}.trend-up {color: #d9534f !important; font-weight: bold;}.trend-down {color: #28a745 !important; font-weight: bold;}.trend-flat {color: #6c757d !important; font-weight: bold;}</style>""", unsafe_allow_html=True)
 
 # ==========================================
-# 3. 数据获取函数
+# 3. 工具函数
 # ==========================================
 def get_realtime_price(stock_codes):
     if not stock_codes: return {}
-    url = f"http://qt.gtimg.cn/q={','.join(stock_codes)}"
     try:
+        url = f"http://qt.gtimg.cn/q={','.join(stock_codes)}"
         r = requests.get(url, timeout=3)
         if r.status_code != 200: return {}
         data_map = {}
-        lines = r.text.split(';')
-        for line in lines:
+        for line in r.text.split(';'):
             if '="' in line:
                 code = line.split('=')[0].split('_')[-1]
                 params = line.split('="')[1].split('~')
@@ -82,30 +42,50 @@ def get_realtime_price(stock_codes):
                         'pct_change': float(params[32])
                     }
         return data_map
-    except Exception as e:
-        st.error(f"数据源错误: {e}")
-        return {}
+    except: return {}
 
-def calculate_fund_estimate(fund_info, market_data):
-    total_weighted_change = 0.0
-    total_weight = 0.0
-    holdings = fund_info.get('holdings', [])
+def calculate_estimate(fund_info, market_data):
+    total_w_change, total_w = 0.0, 0.0
     factor = fund_info.get('factor', 1.0)
-    
-    for stock in holdings:
-        code = stock['code']
-        weight = stock['weight']
+    for s in fund_info.get('holdings', []):
+        code, w = s['code'], s['weight']
         if code in market_data:
-            change = market_data[code]['pct_change']
-            total_weighted_change += change * weight
-            total_weight += weight
-            
-    if total_weight > 0:
-        return (total_weighted_change / total_weight) * factor
-    return 0.0
+            total_w_change += market_data[code]['pct_change'] * w
+            total_w += w
+    return (total_w_change / total_w * factor) if total_w > 0 else 0.0
 
 # ==========================================
-# 4. 主程序逻辑 (核心修复)
+# 4. 生成卡片 HTML 的专用函数 (核心修复)
+# ==========================================
+def create_card_html(fund_name, est_change, factor, base_unit):
+    # 1. 计算颜色和符号
+    if est_change > 0: color_cls, sign = "trend-up", "+"
+    elif est_change < 0: color_cls, sign = "trend-down", ""
+    else: color_cls, sign = "trend-flat", ""
+    
+    # 2. 生成审计提示 HTML (单行模式)
+    audit_html = ""
+    for k, v in AUDIT_MEMO.items():
+        if k in fund_name:
+            audit_html = f"<div class='audit-pill' style='background-color:{v['color']};color:{v['text_color']};'><strong>{v['tag']}</strong> | {v['text']}</div>"
+            break
+            
+    # 3. 拼接最终 HTML (关键：强制连接成一行，无换行符)
+    # 我们用 join 把所有片段连起来，彻底杜绝编辑器自动加缩进的机会
+    html_parts = [
+        f"<div class='fund-card'>",
+        f"<div style='display:flex;justify-content:space-between;align-items:center;'>",
+        f"<h3 style='margin:0;font-size:1.2rem;'>{fund_name}</h3>",
+        f"<span class='{color_cls}' style='font-size:1.5rem;'>{sign}{est_change:.2f}%</span>",
+        f"</div>",
+        audit_html, # 插入胶囊
+        f"<div style='margin-top:10px;font-size:0.9rem;color:#666;'>系数: {factor:.2f} | 底仓: {base_unit}</div>",
+        f"</div>"
+    ]
+    return "".join(html_parts)
+
+# ==========================================
+# 5. 主程序
 # ==========================================
 def main():
     tz = pytz.timezone('Asia/Shanghai')
@@ -114,68 +94,25 @@ def main():
     st.caption(f"最后更新: {now.strftime('%Y-%m-%d %H:%M:%S')}")
     
     try:
-        with open('funds.json', 'r', encoding='utf-8') as f:
-            funds_config = json.load(f)
-    except FileNotFoundError:
-        st.error("找不到 funds.json")
-        return
+        with open('funds.json', 'r', encoding='utf-8') as f: funds = json.load(f)
+    except: 
+        st.error("Missing funds.json"); return
 
-    all_stocks = set()
-    for fund in funds_config.values():
-        for stock in fund.get('holdings', []):
-            all_stocks.add(stock['code'])
-            
-    market_data = get_realtime_price(list(all_stocks))
-    if not market_data:
-        st.warning("等待开盘...")
+    all_codes = {s['code'] for f in funds.values() for s in f.get('holdings', [])}
+    market = get_realtime_price(list(all_codes))
+    
+    if not market:
+        st.warning("等待开盘或接口响应...")
         return
 
     # 渲染循环
-    for fund_name, fund_info in funds_config.items():
-        est_change = calculate_fund_estimate(fund_info, market_data)
-        
-        # 1. 确定颜色样式
-        if est_change > 0:
-            color_class = "trend-up"
-            sign = "+"
-        elif est_change < 0:
-            color_class = "trend-down"
-            sign = ""
-        else:
-            color_class = "trend-flat"
-            sign = ""
-            
-        # 2. 生成审计提示 HTML
-        audit_div = "" 
-        for key, memo in AUDIT_MEMO.items():
-            if key in fund_name:
-                # 这种写法绝对安全，没有换行符
-                audit_div = f'<div class="audit-pill" style="background-color: {memo["color"]}; color: {memo["text_color"]};"><strong>{memo["tag"]}</strong> | {memo["text"]}</div>'
-                break
-        
-        # 3. 【防弹拼接】使用列表 append，彻底杜绝缩进干扰
-        html_parts = []
-        html_parts.append(f'<div class="fund-card">')
-        html_parts.append(f'<div style="display:flex; justify-content:space-between; align-items:center;">')
-        html_parts.append(f'<h3 style="margin:0; font-size:1.2rem;">{fund_name}</h3>')
-        html_parts.append(f'<span class="{color_class}" style="font-size:1.5rem;">{sign}{est_change:.2f}%</span>')
-        html_parts.append(f'</div>')
-        
-        if audit_div:
-            html_parts.append(audit_div)
-            
-        html_parts.append(f'<div style="margin-top:10px; font-size:0.9rem; color:#666;">')
-        html_parts.append(f'系数: {fund_info.get("factor", 1.0):.2f} | 底仓: {fund_info.get("base_unit", 0)}')
-        html_parts.append(f'</div>')
-        html_parts.append(f'</div>')
-        
-        # 4. 合并成一行，不带任何空格或换行
-        final_html = "".join(html_parts)
-        
-        st.markdown(final_html, unsafe_allow_html=True)
-        
-    if st.button('🔄 刷新数据'):
-        st.rerun()
+    for name, info in funds.items():
+        est = calculate_estimate(info, market)
+        # 调用我们的“防缩进”生成器
+        card_html = create_card_html(name, est, info.get('factor', 1.0), info.get('base_unit', 0))
+        st.markdown(card_html, unsafe_allow_html=True)
+
+    if st.button('🔄 刷新数据'): st.rerun()
 
 if __name__ == "__main__":
     main()
