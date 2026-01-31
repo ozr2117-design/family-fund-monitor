@@ -3,6 +3,7 @@ import requests
 import time
 import json
 import pandas as pd
+import re
 from datetime import datetime, timedelta
 from github import Github
 
@@ -24,12 +25,11 @@ AUDIT_MEMO = {
     }
 }
 
-# 🛠️ 基金代码映射表 (C类份额)
+# 🛠️ 基金代码映射表 (仅保留当前持有的3只 C类基金)
 FUND_CODES_MAP = {
     '摩根均衡': '021274',
     '泰康新锐': '017366',
-    '财通优选': '021528',
-    '红利低波': '512890'
+    '财通优选': '021528'
 }
 
 # === 🎨 1. 页面配置与 CSS ===
@@ -42,14 +42,12 @@ st.set_page_config(
 
 st.markdown("""
     <style>
-    /* 全局背景 */
     .stApp {
         background: radial-gradient(circle at 10% 20%, rgba(255, 230, 240, 0.4) 0%, rgba(255, 255, 255, 0) 40%),
                     radial-gradient(circle at 90% 80%, rgba(230, 240, 255, 0.4) 0%, rgba(255, 255, 255, 0) 40%),
                     #fdfdfd;
         font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Helvetica Neue", sans-serif;
     }
-    
     [data-testid="stSidebar"] {display: none;}
     #MainMenu {visibility: hidden;}
     footer {visibility: hidden;}
@@ -59,7 +57,6 @@ st.markdown("""
         border-radius: 20px; background: rgba(255,255,255,0.8); border: 1px solid #eee; color: #555;
     }
     
-    /* 强制等高卡片 */
     div[data-testid="stMetric"] {
         background: rgba(255, 255, 255, 0.65); backdrop-filter: blur(16px);
         border: 1px solid rgba(255, 255, 255, 0.6); border-radius: 20px; padding: 15px 20px;
@@ -85,7 +82,6 @@ st.markdown("""
     .signal-sell { background-color: #fff2f0; border: 1px solid #ffccc7; color: #cf1322; padding: 10px 14px; border-radius: 10px; font-size: 13px; font-weight: 600; margin-bottom: 15px; display: flex; align-items: center; }
     .audit-pill { display: inline-block; padding: 4px 12px; border-radius: 20px; font-size: 12px; font-weight: 500; margin-bottom: 12px; font-family: -apple-system; }
 
-    /* 🏷️ 标签样式组 */
     .tag-base { font-size: 11px; padding: 2px 6px; border-radius: 4px; margin-left: 6px; font-weight: 500; }
     .tag-yesterday { color: #888; background: #f0f0f5; }
     .tag-trend-up { color: #cf1322; background: #fff1f0; border: 1px solid #ffa39e; }
@@ -98,7 +94,8 @@ MARKET_INDICES = {'sh000001': '上证指数', 'sz399006': '创业板指', 'hkHST
 
 # === 🛠️ 辅助函数 ===
 def get_benchmark_code(fund_name):
-    if "周期" in fund_name or "均衡" in fund_name or "红利" in fund_name: return 'sh000001', '上证'
+    # 删除了所有关于“红利”的判断
+    if "周期" in fund_name or "均衡" in fund_name: return 'sh000001', '上证'
     elif "成长" in fund_name or "AI" in fund_name or "优选" in fund_name: return 'sz399006', '创指'
     else: return 'sh000001', '上证'
 
@@ -158,71 +155,108 @@ def get_realtime_price(stock_codes):
         return price_data
     except: return None
 
-# 获取官方净值 (极速通道)
 def get_latest_official(fund_code):
-    if not fund_code or fund_code == "512890": return None, None
+    if not fund_code: return None, None
     url = f"http://qt.gtimg.cn/q=jj{fund_code}"
     try:
         r = requests.get(url, timeout=2)
         if '="' in r.text:
             content = r.text.split('="')[1].strip('";')
             data = content.split('~')
-            # 这里的 index 7 是涨跌幅，index 5 是最新净值，index 8 是日期
             if len(data) > 8:
                 pct = float(data[7])
-                date_str = data[8][:10] # 截取日期部分 YYYY-MM-DD
+                date_str = data[8][:10]
                 return pct, date_str
     except: pass
     return None, None
 
-# === 📈 本地趋势引擎 ===
-def update_nav_history(fund_name, date_str, pct):
-    """自动将今天的净值存入 nav_history.json"""
-    if pct is None or not date_str: return
-    
-    # 读取历史
+# === 🏴‍☠️ 历史数据灌入 (偷天换日) ===
+def fetch_history_from_eastmoney(fund_code):
+    url = f"http://fund.eastmoney.com/pingzhongdata/{fund_code}.js"
+    headers = {"User-Agent": "Mozilla/5.0", "Referer": "http://fund.eastmoney.com/"}
+    try:
+        r = requests.get(url + f"?v={int(time.time())}", headers=headers, timeout=5)
+        if r.status_code == 200:
+            pattern = r'Data_netWorthTrend\s*=\s*(\[.*?\]);'
+            match = re.search(pattern, r.text)
+            if match:
+                data = json.loads(match.group(1))
+                history_map = {}
+                for item in data:
+                    d_str = time.strftime('%Y-%m-%d', time.localtime(item['x']/1000))
+                    pct = item.get('equityReturn', 0)
+                    history_map[d_str] = pct
+                return history_map
+    except: pass
+    return None
+
+def init_history_data(funds_config):
     hist, sha = load_json('nav_history.json')
     if not isinstance(hist, dict): hist = {}
     
-    # 基金专属记录
-    if fund_name not in hist: hist[fund_name] = {}
+    updated = False
+    for name in funds_config.keys():
+        short_name = name.split('(')[0].strip()
+        f_code = None
+        for k, v in FUND_CODES_MAP.items():
+            if k in short_name or short_name in k:
+                f_code = v; break
+        
+        if not f_code: continue
+        
+        if short_name not in hist or len(hist[short_name]) < 30:
+            with st.spinner(f"正在同步 {short_name} 的历史数据..."):
+                full_data = fetch_history_from_eastmoney(f_code)
+                if full_data:
+                    if short_name not in hist: hist[short_name] = {}
+                    hist[short_name].update(full_data)
+                    updated = True
     
-    # 如果该日期未记录，则写入
+    if updated:
+        save_json('nav_history.json', hist, sha, "Init Full History")
+        return hist
+    return hist
+
+# === 📈 本地趋势引擎 ===
+def update_nav_history(hist, fund_name, date_str, pct):
+    if pct is None or not date_str: return hist
+    if fund_name not in hist: hist[fund_name] = {}
     if date_str not in hist[fund_name]:
         hist[fund_name][date_str] = pct
-        # 排序并只保留最近60天
-        sorted_dates = sorted(hist[fund_name].keys())
-        if len(sorted_dates) > 60:
-            new_record = {d: hist[fund_name][d] for d in sorted_dates[-60:]}
-            hist[fund_name] = new_record
-        
-        save_json('nav_history.json', hist, sha, f"Auto-save {fund_name} {date_str}")
+    return hist
 
-def calculate_local_trend(fund_name):
-    """读取本地历史，计算连涨连跌"""
-    hist, _ = load_json('nav_history.json')
+def calculate_local_trend(hist, fund_name):
     if not hist or fund_name not in hist: return None
-    
-    # 获取该基金的时间序列 [("2026-01-30", -0.93), ...]
     records = sorted(hist[fund_name].items(), key=lambda x: x[0], reverse=True)
     if not records: return None
     
-    # 计算连涨/连跌
     first_val = records[0][1]
     direction = 1 if first_val > 0 else (-1 if first_val < 0 else 0)
-    consecutive = 0
+    if direction == 0: return 0
     
+    consecutive = 0
     for _, val in records:
         if (direction == 1 and val > 0) or (direction == -1 and val < 0):
             consecutive += 1
         else: break
         
-    return consecutive * direction # 返回带符号的天数
+    return consecutive * direction
 
 # === 🚀 主程序 ===
 def main():
     funds_config, config_sha = load_json('funds.json')
     if not funds_config: st.stop()
+
+    if 'history_checked' not in st.session_state:
+        nav_hist = init_history_data(funds_config)
+        st.session_state['nav_hist'] = nav_hist
+        st.session_state['history_checked'] = True
+    else:
+        if 'nav_hist' not in st.session_state:
+            nav_hist, _ = load_json('nav_history.json')
+            st.session_state['nav_hist'] = nav_hist if nav_hist else {}
+        else:
+            nav_hist = st.session_state['nav_hist']
 
     bj_time = datetime.utcnow() + timedelta(hours=8)
     now_hour = bj_time.hour
@@ -243,7 +277,6 @@ def main():
             st.markdown("<div style='height:10px'></div>", unsafe_allow_html=True)
             action_mode = st.radio("Tools", ["💾  收盘存证", "⚖️  晚间审计"], label_visibility="collapsed", index=None, key="act")
             
-            # (持仓管理/收盘存证/晚间审计)
             current_selection = action_mode if action_mode else mode
             if current_selection == "💰  持仓管理":
                 st.divider()
@@ -261,8 +294,7 @@ def main():
                 st.divider()
                 if st.button("Run Snapshot", type="primary", use_container_width=True):
                     with st.spinner("Saving..."):
-                        # ... (存证逻辑) ...
-                        st.toast("Snapshot feature pending") # 简化显示，如需完整逻辑请补充
+                        st.toast("Snapshot feature pending") 
 
     # === 主循环 ===
     if "持仓管理" not in str(mode) and "持仓管理" not in str(action_mode):
@@ -277,9 +309,9 @@ def main():
                 if not market: st.warning("Connecting..."); time.sleep(2); continue
                 
                 total_p = 0; total_b = 0; cards = []; msg = None
+                nav_hist_updated = False
                 
                 for name, info in funds_config.items():
-                    # 1. 估值
                     val=0; w=0; stocks=[]
                     for s in info['holdings']:
                         d = market.get(s['code'])
@@ -290,26 +322,24 @@ def main():
                     profit = info.get('holding_value', 0) * est / 100
                     total_p += profit; total_b += info.get('holding_value', 0)
 
-                    # 2. 官方净值 + 自动归档 (🔥 智能模糊匹配)
-                    short_name = name.split('(')[0].strip() # "摩根均衡C"
+                    short_name = name.split('(')[0].strip()
                     f_code = None
-                    # 智能循环匹配，不管有没有 C 都能找到
                     for k, v in FUND_CODES_MAP.items():
                         if k in short_name or short_name in k:
-                            f_code = v
-                            break
+                            f_code = v; break
                     
                     last_pct, last_date = get_latest_official(f_code)
-                    if last_pct is not None:
-                        update_nav_history(short_name, last_date, last_pct)
                     
-                    # 3. 计算本地趋势
-                    local_trend = calculate_local_trend(short_name)
+                    if last_pct is not None and nav_hist:
+                        if short_name not in nav_hist: nav_hist[short_name] = {}
+                        if last_date not in nav_hist[short_name]:
+                            nav_hist[short_name][last_date] = last_pct
+                            nav_hist_updated = True
+                    
+                    local_trend = calculate_local_trend(nav_hist, short_name)
 
-                    # 4. 信号 (🔥 这里使用了 get_benchmark_code)
                     bench_c, bench_n = get_benchmark_code(name)
                     bench_v = market.get(bench_c, {}).get('pct', 0)
-                    
                     sig = None; txt = ""; act = ""
                     base_u = info.get('base_unit', 1000)
                     
@@ -326,9 +356,12 @@ def main():
                         "last_pct": last_pct, "local_trend": local_trend
                     })
                 
+                if nav_hist_updated:
+                    h, s = load_json('nav_history.json')
+                    save_json('nav_history.json', nav_hist, s, "Auto Update")
+
                 if msg: st.toast(msg)
 
-                # 顶部总览 (已对齐)
                 st.markdown("<br>", unsafe_allow_html=True)
                 c1, c2 = st.columns([1.8, 1])
                 p_s = "****" if zen_mode else f"{total_p:+.2f}"
@@ -359,23 +392,29 @@ def main():
                         p_show = "<span style='color:#aaa'>****</span>" if zen_mode else f"￥{card['profit']:+.1f}"
                         b_show = "****" if zen_mode else f"￥{card['base']:,}"
 
-                        # === 🔥 核心：昨日收益 + 趋势胶囊 ===
                         last_html = ""
-                        # 1. 昨日数据
                         if card['last_pct'] is not None:
                             l_col = "#ff3b30" if card['last_pct']>0 else ("#34c759" if card['last_pct']<0 else "#888")
                             last_html = f"<span class='tag-base tag-yesterday' style='color:{l_col}'>昨 {card['last_pct']:+.2f}%</span>"
                         else:
-                            last_html = "<span class='tag-base tag-yesterday'>昨 --%</span>"
+                            last_html = "" # 没有数据就不显示
                         
-                        # 2. 趋势数据 (从本地历史读取)
                         trend_html = ""
                         tr = card['local_trend']
-                        if tr:
+                        if tr is not None:
                             if tr > 0: trend_html = f"<span class='tag-base tag-trend-up'>🔥 {tr}连涨</span>"
                             elif tr < 0: trend_html = f"<span class='tag-base tag-trend-down'>❄️ {abs(tr)}连跌</span>"
-                        else:
-                            trend_html = "<span class='tag-base tag-trend-wait'>⏳ 记录中</span>"
+                            else: trend_html = "<span class='tag-base tag-trend-wait'>〰️ 0连涨</span>"
+                        
+                        hist_row_html = ""
+                        if last_html or trend_html:
+                            hist_row_html = f"""
+                            <div style='margin-top:8px; display:flex; align-items:center'>
+                                <span style='font-size:11px; color:#aaa'>历史</span>
+                                {last_html}
+                                {trend_html}
+                            </div>
+                            """
 
                         kc1.markdown(f"""
                         <div class='detail-box'>
@@ -384,11 +423,7 @@ def main():
                             <div style='height:15px'></div>
                             <div style='font-size:12px; color:#888; margin-bottom:2px'>本金</div>
                             <div style='font-size:16px; color:#333; font-weight:500'>{b_show}</div>
-                            <div style='margin-top:8px; display:flex; align-items:center'>
-                                <span style='font-size:11px; color:#aaa'>历史</span>
-                                {last_html}
-                                {trend_html}
-                            </div>
+                            {hist_row_html}
                         </div>
                         """, unsafe_allow_html=True)
 
