@@ -4,6 +4,7 @@ import time
 import json
 import pandas as pd
 import re
+import os
 from datetime import datetime, timedelta
 from github import Github
 
@@ -34,7 +35,7 @@ FUND_CODES_MAP = {
 
 # === 🎨 1. 页面配置与 CSS ===
 st.set_page_config(
-    page_title="Family Wealth V7.6",
+    page_title="Family Wealth V7.7",
     page_icon="💎",
     layout="centered",
     initial_sidebar_state="collapsed"
@@ -64,7 +65,9 @@ st.markdown("""
         background: rgba(255, 255, 255, 0.65); backdrop-filter: blur(16px);
         border: 1px solid rgba(255, 255, 255, 0.6); border-radius: 20px; padding: 15px 20px;
         box-shadow: 0 8px 32px rgba(31, 38, 135, 0.05);
-        min-height: 120px !important; max-height: 120px !important;
+        /* 固定高度 */
+        min-height: 120px !important; 
+        max-height: 120px !important;
         display: flex; flex-direction: column; justify-content: center;
     }
     
@@ -175,6 +178,7 @@ def get_latest_official(fund_code):
 
 # === 🏴‍☠️ 历史数据灌入 ===
 def fetch_history_from_eastmoney(fund_code):
+    """从静态文件获取全量历史"""
     url = f"http://fund.eastmoney.com/pingzhongdata/{fund_code}.js"
     headers = {"User-Agent": "Mozilla/5.0", "Referer": "http://fund.eastmoney.com/"}
     try:
@@ -207,17 +211,15 @@ def init_history_data(funds_config):
         
         if not f_code: continue
         
-        # 🔥 V7.6 修复：强制替换模式 (Replace Mode)
-        # 只要抓取成功，就直接丢弃本地旧数据，用新的覆盖。彻底清除“2连涨”脏数据。
+        # 强制更新，覆盖旧数据
         with st.spinner(f"正在校准 {short_name} 数据..."):
             full_data = fetch_history_from_eastmoney(f_code)
             if full_data:
-                # 直接赋值，不要 .update()，防止旧脏数据残留
-                hist[short_name] = full_data
+                hist[short_name] = full_data # 直接替换，不merge
                 updated = True
     
     if updated:
-        save_json('nav_history.json', hist, sha, "History Clean Replace")
+        save_json('nav_history.json', hist, sha, "Auto Correct History V7.7")
         return hist
     return hist
 
@@ -244,10 +246,13 @@ def main():
     funds_config, config_sha = load_json('funds.json')
     if not funds_config: st.stop()
 
-    if 'history_checked' not in st.session_state:
+    # 🔥 核心修正：更改 Session State 密钥，强制触发重新清洗
+    init_key = 'history_calibrated_v77'
+    
+    if init_key not in st.session_state:
         nav_hist = init_history_data(funds_config)
         st.session_state['nav_hist'] = nav_hist
-        st.session_state['history_checked'] = True
+        st.session_state[init_key] = True
     else:
         if 'nav_hist' not in st.session_state:
             nav_hist, _ = load_json('nav_history.json')
@@ -274,6 +279,22 @@ def main():
             st.markdown("<div style='height:10px'></div>", unsafe_allow_html=True)
             action_mode = st.radio("Tools", ["💾  收盘存证", "⚖️  晚间审计"], label_visibility="collapsed", index=None, key="act")
             
+            st.divider()
+            # 🔥 新增：强制重置按钮
+            if st.button("🗑️ 强制删除历史缓存", use_container_width=True):
+                # 尝试删除本地文件
+                try:
+                    if os.path.exists('nav_history.json'):
+                        os.remove('nav_history.json')
+                    # 清除 Session State
+                    for key in list(st.session_state.keys()):
+                        del st.session_state[key]
+                    st.toast("已重置！正在重启...", icon="♻️")
+                    time.sleep(1)
+                    st.rerun()
+                except Exception as e:
+                    st.error(f"删除失败: {e}")
+
             current_selection = action_mode if action_mode else mode
             if current_selection == "💰  持仓管理":
                 st.divider()
@@ -319,6 +340,7 @@ def main():
                     profit = info.get('holding_value', 0) * est / 100
                     total_p += profit; total_b += info.get('holding_value', 0)
 
+                    # 官方净值更新
                     short_name = name.split('(')[0].strip()
                     f_code = None
                     for k, v in FUND_CODES_MAP.items():
@@ -401,7 +423,7 @@ def main():
                             elif tr < 0: trend_html = f"<span class='tag-base tag-trend-down'>❄️ {abs(tr)}连跌</span>"
                             else: trend_html = "<span class='tag-base tag-trend-wait'>〰️ 0连涨</span>"
                         
-                        # 🔥 修复：单行字符串拼接，去除缩进，彻底解决乱码
+                        # 🔥 修复：完全单行化 HTML，去除所有可能的格式问题
                         hist_row_html = ""
                         if last_html or trend_html:
                             hist_row_html = f"<div style='margin-top:8px; display:flex; align-items:center'><span style='font-size:11px; color:#aaa'>历史</span>{last_html}{trend_html}</div>"
