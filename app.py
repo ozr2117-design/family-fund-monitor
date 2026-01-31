@@ -6,6 +6,31 @@ import pandas as pd
 from datetime import datetime, timedelta
 from github import Github
 
+# ==========================================
+# 0. 🎯 核心配置：人工审计日志 (Audit Memo)
+# ==========================================
+# 这里就是你要的“审计胶囊”配置
+AUDIT_MEMO = {
+    "摩根均衡": {
+        "tag": "⚠️ 偏离较高", 
+        "text": "上周偏离 -0.7%，需注意误差", 
+        "color": "#FFF3CD", # 浅橙色背景
+        "text_color": "#856404" # 深褐色文字
+    },
+    "泰康新锐": {
+        "tag": "✅ 准确率高", 
+        "text": "基本跟净值一致，可信度高", 
+        "color": "#D4EDDA", # 浅绿色背景
+        "text_color": "#155724" # 深绿色文字
+    },
+    "财通优选": {
+        "tag": "👌 偏差可控", 
+        "text": "偏离值可接受，参考性强", 
+        "color": "#D1ECF1", # 浅蓝色背景
+        "text_color": "#0C5460" # 深蓝色文字
+    }
+}
+
 # === 🎨 1. 页面配置与 CSS 魔法 (Apple Glassmorphism V5.1) ===
 st.set_page_config(
     page_title="Family Wealth",
@@ -14,7 +39,7 @@ st.set_page_config(
     initial_sidebar_state="collapsed"
 )
 
-# 注入 CSS：极光背景 + 信号卡片 + 禅模式样式
+# 注入 CSS：极光背景 + 信号卡片 + 禅模式样式 + 审计胶囊样式
 st.markdown("""
     <style>
     /* 1. 全局极光背景 */
@@ -132,6 +157,17 @@ st.markdown("""
         display: flex;
         align-items: center;
         box-shadow: 0 2px 6px rgba(207, 19, 34, 0.05);
+    }
+
+    /* 💊 审计胶囊样式 (新增) */
+    .audit-pill {
+        display: inline-block;
+        padding: 4px 12px;
+        border-radius: 20px;
+        font-size: 12px;
+        font-weight: 500;
+        margin-bottom: 12px;
+        font-family: -apple-system;
     }
     </style>
 """, unsafe_allow_html=True)
@@ -421,7 +457,6 @@ def main():
                         multiplier = 2 if est < -4.0 else 1
                         buy_amt = base_unit * multiplier
                         signal_desc = f"超跌错杀：跑输{bench_name} {abs(est-bench_val):.1f}%"
-                        # 禅模式下也建议显示具体加仓金额，因为这是指令，不是盈亏
                         action_advice = f"建议加仓: +¥{buy_amt:,}"
                         if not signal_msg: signal_msg = "🎯 出现加仓机会"
 
@@ -434,6 +469,7 @@ def main():
 
                     cards_data.append({
                         "name": name.split('(')[0],
+                        "full_name": name, # 保留全名用于匹配胶囊
                         "est": est,
                         "profit": profit,
                         "principal": principal,
@@ -472,6 +508,25 @@ def main():
                     title = f"{icon} {card['name']}{title_suffix}"
                     
                     with st.expander(title):
+                        # ----------------------------------------------------
+                        # 🔥 插入审计胶囊 (AUDIT PILL) - 抗干扰版
+                        # ----------------------------------------------------
+                        pill_html = ""
+                        for k, v in AUDIT_MEMO.items():
+                            if k in card['full_name']: # 匹配全名
+                                # 使用列表拼接，彻底防止 f-string 缩进引发的 Markdown 渲染错误
+                                html_parts = [
+                                    f"<div class='audit-pill' style='background-color:{v['color']}; color:{v['text_color']};'>",
+                                    f"<strong>{v['tag']}</strong> | {v['text']}",
+                                    "</div>"
+                                ]
+                                pill_html = "".join(html_parts)
+                                break
+                        
+                        if pill_html:
+                            st.markdown(pill_html, unsafe_allow_html=True)
+                        # ----------------------------------------------------
+
                         # 信号区域 (不受禅模式影响，必须清晰)
                         if card['signal_type'] == "BUY":
                             st.markdown(f"<div class='signal-buy'><div><div>🎯 {card['signal_desc']}</div><div style='font-size:15px; margin-top:4px'>👉 {card['action_advice']}</div></div></div>", unsafe_allow_html=True)
