@@ -1,22 +1,17 @@
 import requests
 import json
 import os
-from datetime import datetime, timedelta
+from datetime import datetime
 
-# ==========================================
-# ⚙️ 配置区 (记得填回你的 Bark Key)
-# ==========================================
+# ================= 配置区 =================
+# 请务必替换为你自己的 Bark Key
 BARK_URLS = [
-    "https://api.day.app/8BTBArkBatQQdF39JpsBDg/推送标题/基金开搞！/",
+    "https://api.day.app/8BTBArkBatQQdF39JpsBDg/推送标题/基金开搞！/", 
     "https://api.day.app/你的Key2/"
 ]
+LOG_FILE = "signals.md"
 
-LOG_FILE = "signals.md"  # 日记文件名
-
-# ==========================================
-# 🛠️ 核心逻辑区
-# ==========================================
-
+# ================= 工具函数 =================
 def load_funds():
     try:
         with open('funds.json', 'r', encoding='utf-8') as f:
@@ -27,138 +22,110 @@ def get_realtime_price(stock_codes):
     if not stock_codes: return {}
     url = f"http://qt.gtimg.cn/q={','.join(stock_codes)}"
     try:
-        r = requests.get(url, timeout=3)
-        price_data = {}
-        parts = r.text.split(';')
-        for part in parts:
-            if '="' in part:
-                try:
-                    code = part.split('=')[0].split('_')[-1]
-                    data = part.split('="')[1].split('~')
-                    close = float(data[4])
-                    if close > 0:
-                        price_data[code] = ((float(data[3]) - close) / close) * 100
-                except: continue
-        return price_data
+        r = requests.get(url, timeout=5)
+        data_map = {}
+        for line in r.text.split(';'):
+            if '="' in line:
+                code = line.split('=')[0].split('_')[-1]
+                vals = line.split('="')[1].split('~')
+                close = float(vals[4])
+                if close > 0:
+                    pct = ((float(vals[3]) - close) / close) * 100
+                    data_map[code] = pct
+        return data_map
     except: return {}
 
-def get_benchmark_pct(fund_name, market_data):
-    code = 'sz399006' if any(k in fund_name for k in ["成长", "AI", "优选"]) else 'sh000001'
-    return market_data.get(code, 0)
+def get_benchmark(name, market_data):
+    if "红利" in name: return market_data.get('sh000001', 0) # 红利对比上证
+    if "纳斯达克" in name: return market_data.get('usNDX', 0)
+    if any(k in name for k in ["成长", "AI", "优选"]): return market_data.get('sz399006', 0)
+    return market_data.get('sh000001', 0)
 
-# 🔥 新增：写日记功能
-def append_to_log(log_entries):
-    if not log_entries: return
-    
+def append_log(entries):
+    if not entries: return
     today = datetime.now().strftime("%Y-%m-%d")
-    new_lines = []
     
-    for entry in log_entries:
-        # 格式: | 日期 | 基金 | 信号 | 详情 | 操作 |
-        line = f"| {today} | {entry['name']} | {entry['type']} | {entry['detail']} | {entry['action']} |"
-        new_lines.append(line)
-        
-    try:
-        # 读取现有内容
-        with open(LOG_FILE, 'r', encoding='utf-8') as f:
-            lines = f.readlines()
-            
-        # 在表头(第2行)下面插入新内容，这样最新的在最上面
-        insert_idx = 2
-        for i, line in enumerate(lines):
-            if "|---" in line:
-                insert_idx = i + 1
-                break
-                
-        # 插入
-        for line in reversed(new_lines):
-            lines.insert(insert_idx, line + "\n")
-            
-        # 写入
+    # 准备新行
+    new_lines = []
+    for e in entries:
+        new_lines.append(f"| {today} | {e['name']} | {e['type']} | {e['detail']} | {e['action']} |\n")
+    
+    # 读取并插入
+    if not os.path.exists(LOG_FILE):
         with open(LOG_FILE, 'w', encoding='utf-8') as f:
-            f.writelines(lines)
-        print("✅ 日记写入成功")
-    except Exception as e:
-        print(f"❌ 写日记失败: {e}")
+            f.write("# 🤖 交易信号日记\n\n| 日期 | 基金 | 信号 | 详情 | 建议操作 |\n|---|---|---|---|---|\n")
+            
+    with open(LOG_FILE, 'r', encoding='utf-8') as f:
+        lines = f.readlines()
+        
+    # 在表格线后插入（第4行）
+    insert_idx = 4 if len(lines) >= 4 else len(lines)
+    for line in reversed(new_lines):
+        lines.insert(insert_idx, line)
+        
+    with open(LOG_FILE, 'w', encoding='utf-8') as f:
+        f.writelines(lines)
 
-# ==========================================
-# 🚀 主程序
-# ==========================================
+# ================= 主逻辑 =================
 def main():
-    print(">>> 开始执行巡检...")
+    print(">>> 开始巡检")
     funds = load_funds()
     if not funds: return
-    
-    all_codes = ['sh000001', 'sz399006']
-    for f in funds.values():
-        for s in f['holdings']: all_codes.append(s['code'])
-    
-    market_data = get_realtime_price(list(set(all_codes)))
-    if not market_data: return
 
-    messages = []
-    log_entries = [] # 专门用于写日记的数据结构
+    # 收集代码
+    codes = ['sh000001', 'sz399006', 'usNDX']
+    for f in funds.values():
+        for s in f['holdings']: codes.append(s['code'])
     
+    market = get_realtime_price(list(set(codes)))
+    if not market: return
+
+    msgs = []
+    logs = []
+
     for name, info in funds.items():
-        factor = info.get('factor', 1.0)
-        base_unit = info.get('base_unit', 1000)
+        # 计算估值
         val = 0; w = 0
         for s in info['holdings']:
-            if s['code'] in market_data:
-                val += market_data[s['code']] * s['weight']; w += s['weight']
+            if s['code'] in market:
+                val += market[s['code']] * s['weight']; w += s['weight']
         
-        est = (val / w * factor) if w > 0 else 0
-        bench_val = get_benchmark_pct(name, market_data)
+        est = (val / w * info.get('factor', 1.0)) if w > 0 else 0
+        bench = get_benchmark(name, market)
         short_name = name.split('(')[0]
+        base_unit = info.get('base_unit', 1000)
 
-        # 信号判断
-        signal_type = None
-        detail = ""
-        action = ""
+        # === 信号阈值判断 ===
         
-        # 1. 买入
-        if est < -2.5 and est < bench_val:
-            multiplier = 2 if est < -4.0 else 1
-            buy_amt = base_unit * multiplier
-            msg = f"🟢【机会】{short_name} {est:.2f}%\n📉 跑输基准 {abs(est-bench_val):.1f}%\n👉 建议加仓 ¥{buy_amt:,}"
-            messages.append(msg)
-            
-            # 记录日志数据
-            log_entries.append({
-                "name": short_name,
-                "type": "🟢 买入机会",
-                "detail": f"估值 {est:.2f}% (跑输 {abs(est-bench_val):.1f}%)",
-                "action": f"买入 ¥{buy_amt:,}"
-            })
+        # 特殊逻辑：红利低波 (只做大跌狙击)
+        if "红利" in name:
+            if est < -3.5: # 只有跌超 3.5% 才提示
+                msg = f"🟢【黄金坑】{short_name} 暴跌 {est:.2f}%\n🛡️ 防守反击机会\n👉 建议重仓 ¥{base_unit*2}"
+                msgs.append(msg)
+                logs.append({"name":short_name, "type":"🟢 黄金坑", "detail":f"{est:.2f}%", "action":f"买入 ¥{base_unit*2}"})
+            continue # 红利不做止盈，跳过后续逻辑
 
-        # 2. 卖出
-        elif est > 3.0 and est > (bench_val + 1.5):
-            msg = f"🔴【止盈】{short_name} +{est:.2f}%\n🔥 跑赢基准 {abs(est-bench_val):.1f}%\n👉 建议卖出 1/4"
-            messages.append(msg)
+        # 普通逻辑：波段交易
+        if est < -2.5 and est < bench:
+            buy_amt = base_unit * (2 if est < -4.0 else 1)
+            msg = f"🟢【机会】{short_name} {est:.2f}%\n📉 跑输基准 {abs(est-bench):.1f}%\n👉 建议加仓 ¥{buy_amt}"
+            msgs.append(msg)
+            logs.append({"name":short_name, "type":"🟢 买入", "detail":f"{est:.2f}% (跑输{abs(est-bench):.1f}%)", "action":f"买入 ¥{buy_amt}"})
             
-            log_entries.append({
-                "name": short_name,
-                "type": "🔴 止盈提醒",
-                "detail": f"估值 +{est:.2f}% (跑赢 {abs(est-bench_val):.1f}%)",
-                "action": "卖出 1/4"
-            })
+        elif est > 3.0 and est > (bench + 1.5):
+            msg = f"🔴【止盈】{short_name} +{est:.2f}%\n🔥 情绪过热\n👉 建议卖出 1/4"
+            msgs.append(msg)
+            logs.append({"name":short_name, "type":"🔴 止盈", "detail":f"+{est:.2f}% (跑赢{abs(est-bench):.1f}%)", "action":"卖出 1/4"})
 
-    # 执行操作
-    if messages:
-        # 1. 推送 Bark
-        final_body = "\n\n".join(messages)
-        title = "基金信号提醒"
+    # 发送与记录
+    if msgs:
+        body = "\n\n".join(msgs)
         for url in BARK_URLS:
-            if "你的Key" in url: continue
-            try:
-                clean_url = url.rstrip('/')
-                requests.get(f"{clean_url}/{title}/{final_body}?group=fund")
+            try: requests.get(f"{url.strip('/')}/基金信号提醒/{body}?group=fund", timeout=5)
             except: pass
-        print("✅ 推送完成")
         
-        # 2. 写日记 (仅当有信号时)
-        append_to_log(log_entries)
-        
+        append_log(logs)
+        print("✅ 信号已发送并记录")
     else:
         print("今日无信号")
 
