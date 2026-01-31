@@ -30,7 +30,7 @@ AUDIT_MEMO = {
     }
 }
 
-# === 🎨 1. 页面配置与 CSS 魔法 (Apple Glassmorphism V5.3) ===
+# === 🎨 1. 页面配置与 CSS 魔法 (Apple Glassmorphism V5.3.1) ===
 st.set_page_config(
     page_title="Family Wealth V5.3",
     page_icon="💎",
@@ -133,7 +133,7 @@ st.markdown("""
     .signal-buy { background-color: #f6ffed; border: 1px solid #b7eb8f; color: #389e0d; padding: 10px 14px; border-radius: 10px; font-size: 13px; font-weight: 600; margin-bottom: 15px; display: flex; align-items: center; box-shadow: 0 2px 6px rgba(56, 158, 13, 0.05); }
     .signal-sell { background-color: #fff2f0; border: 1px solid #ffccc7; color: #cf1322; padding: 10px 14px; border-radius: 10px; font-size: 13px; font-weight: 600; margin-bottom: 15px; display: flex; align-items: center; box-shadow: 0 2px 6px rgba(207, 19, 34, 0.05); }
 
-    /* 💊 审计胶囊样式 (Audit Pill) */
+    /* 💊 审计胶囊样式 */
     .audit-pill { display: inline-block; padding: 4px 12px; border-radius: 20px; font-size: 12px; font-weight: 500; margin-bottom: 12px; font-family: -apple-system; }
     
     /* 🧬 趋势胶囊样式 (New Trend Pill) */
@@ -220,22 +220,29 @@ def get_realtime_price(stock_codes):
         return price_data
     except: return None
 
-# 2. 基金历史净值 (用于计算趋势)
+# 2. 基金历史净值 (腾讯源，更稳定🔥)
 def get_fund_history(fund_code, limit=30):
     if not fund_code: return []
-    url = f"https://api.fund.eastmoney.com/f10/lsjz?fundCode={fund_code}&pageIndex=1&pageSize={limit}"
-    headers = {"Referer": "http://fund.eastmoney.com/", "User-Agent": "Mozilla/5.0"}
+    # 腾讯的接口：jj + 基金代码
+    url = f"http://web.ifzq.gtimg.cn/appstock/app/fund/nav/get?code=jj{fund_code}"
     try:
-        r = requests.get(url, headers=headers, timeout=2)
+        r = requests.get(url, timeout=2)
         if r.status_code == 200:
             res = r.json()
-            if "Data" in res and "LSJZList" in res["Data"]:
+            # 腾讯返回的结构：data -> jjCode -> data
+            key = f"jj{fund_code}"
+            if "data" in res and key in res["data"]:
+                data_list = res["data"][key]["data"]
+                # 腾讯数据是按日期正序的 (旧->新)，我们倒序取最近的
+                # item[2] 是当日涨跌幅
                 history = []
-                for item in res["Data"]["LSJZList"]:
-                    val = item.get("JZZZL", "0")
-                    if val: history.append(float(val))
+                for item in reversed(data_list):
+                    if len(history) >= limit: break
+                    history.append(float(item[2]))
                 return history
-    except: pass
+    except Exception as e:
+        # print(f"History Error: {e}")
+        pass
     return []
 
 # 3. 趋势计算引擎
@@ -397,8 +404,14 @@ def main():
                     profit = info.get('holding_value', 0) * est / 100
                     total_p += profit; total_base += info.get('holding_value', 0)
 
-                    # 2. 计算趋势 (新增功能 🔥)
-                    f_code = FUND_CODES_MAP.get(name) # 匹配代码
+                    # 2. 计算趋势 (腾讯源优化版 🔥)
+                    f_code = None
+                    # 智能匹配逻辑：只要 Map 里的名字包含 JSON 里的名字 (或者反过来)，就算匹配成功
+                    for k_map, v_map in FUND_CODES_MAP.items():
+                        if name.split('(')[0] in k_map or k_map in name:
+                            f_code = v_map
+                            break
+                    
                     hist_data = get_fund_history(f_code)
                     consecutive, trend_ratio = calculate_trend(est, hist_data)
 
