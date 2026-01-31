@@ -24,7 +24,7 @@ AUDIT_MEMO = {
     }
 }
 
-# 🛠️ 基金代码映射表 (已锁定为 C 类份额)
+# 基金代码映射 (C类份额)
 FUND_CODES_MAP = {
     '摩根均衡': '021274',
     '泰康新锐': '017366',
@@ -42,46 +42,35 @@ st.set_page_config(
 
 st.markdown("""
     <style>
-    /* 全局背景 */
     .stApp {
         background: radial-gradient(circle at 10% 20%, rgba(255, 230, 240, 0.4) 0%, rgba(255, 255, 255, 0) 40%),
                     radial-gradient(circle at 90% 80%, rgba(230, 240, 255, 0.4) 0%, rgba(255, 255, 255, 0) 40%),
                     #fdfdfd;
         font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Helvetica Neue", sans-serif;
     }
-    
     [data-testid="stSidebar"] {display: none;}
     #MainMenu {visibility: hidden;}
     footer {visibility: hidden;}
     header {visibility: hidden;}
     
-    /* 按钮优化 */
     div[data-testid="stPopover"] > button {
         border-radius: 20px; background: rgba(255,255,255,0.8); border: 1px solid #eee; color: #555;
     }
-
-    /* 🔥 卡片强制等高 */
+    
+    /* 强制等高卡片 */
     div[data-testid="stMetric"] {
-        background: rgba(255, 255, 255, 0.65); 
-        backdrop-filter: blur(16px);
-        border: 1px solid rgba(255, 255, 255, 0.6); 
-        border-radius: 20px; 
-        padding: 15px 20px;
+        background: rgba(255, 255, 255, 0.65); backdrop-filter: blur(16px);
+        border: 1px solid rgba(255, 255, 255, 0.6); border-radius: 20px; padding: 15px 20px;
         box-shadow: 0 8px 32px rgba(31, 38, 135, 0.05);
-        min-height: 115px !important; 
-        max-height: 115px !important;
-        display: flex;
-        flex-direction: column;
-        justify-content: center;
+        min-height: 115px !important; max-height: 115px !important;
+        display: flex; flex-direction: column; justify-content: center;
     }
-
     div[data-testid="stExpander"] {
         border: none; box-shadow: 0 8px 24px rgba(0,0,0,0.03);
         border-radius: 16px; background-color: rgba(255, 255, 255, 0.5);
         margin-bottom: 15px; overflow: hidden;
     }
     
-    /* 列表样式 */
     .ios-list-container { display: flex; flex-direction: column; width: 100%; }
     .ios-row { display: flex; align-items: center; justify-content: space-between; padding: 10px 0; border-bottom: 1px solid rgba(0,0,0,0.06); width: 100%; }
     .ios-row:last-child { border-bottom: none; }
@@ -90,7 +79,6 @@ st.markdown("""
     .ios-pill { padding: 4px 10px; border-radius: 6px; font-size: 13px; font-weight: 600; min-width: 65px; text-align: right; color: white; font-family: -apple-system; }
     .detail-box { background: rgba(255,255,255,0.6); padding: 15px; border-radius: 12px; border: 1px solid rgba(255,255,255,0.4); }
     
-    /* 信号提示 */
     .signal-buy { background-color: #f6ffed; border: 1px solid #b7eb8f; color: #389e0d; padding: 10px 14px; border-radius: 10px; font-size: 13px; font-weight: 600; margin-bottom: 15px; display: flex; align-items: center; }
     .signal-sell { background-color: #fff2f0; border: 1px solid #ffccc7; color: #cf1322; padding: 10px 14px; border-radius: 10px; font-size: 13px; font-weight: 600; margin-bottom: 15px; display: flex; align-items: center; }
     .audit-pill { display: inline-block; padding: 4px 12px; border-radius: 20px; font-size: 12px; font-weight: 500; margin-bottom: 12px; font-family: -apple-system; }
@@ -105,6 +93,12 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 MARKET_INDICES = {'sh000001': '上证指数', 'sz399006': '创业板指', 'hkHSTECH': '恒生科技'}
+
+# === 🛠️ 辅助函数 (🔥 补回丢失的函数) ===
+def get_benchmark_code(fund_name):
+    if "周期" in fund_name or "均衡" in fund_name or "红利" in fund_name: return 'sh000001', '上证'
+    elif "成长" in fund_name or "AI" in fund_name or "优选" in fund_name: return 'sz399006', '创指'
+    else: return 'sh000001', '上证'
 
 # === 🛠️ GitHub & 数据存储 ===
 def get_repo():
@@ -130,14 +124,6 @@ def save_json(filename, data, sha, message):
         if sha: repo.update_file(filename, message, new_content, sha)
         else: repo.create_file(filename, message, new_content)
 
-def save_factor_history(date_str, new_factors_dict):
-    history, sha = load_json('factor_history.json')
-    if not isinstance(history, dict): history = {}
-    existing_record = history.get(date_str, {})
-    existing_record.update(new_factors_dict)
-    history[date_str] = existing_record
-    save_json('factor_history.json', history, sha, f"Factor Log {date_str}")
-
 # === 🕷️ 数据获取 ===
 def get_realtime_price(stock_codes):
     if not stock_codes: return {}
@@ -162,25 +148,24 @@ def get_realtime_price(stock_codes):
         return price_data
     except: return None
 
-# 🔥 核心修正：使用腾讯接口抓取官方净值 (Index 7)
+# 获取官方净值 (极速通道)
 def get_latest_official(fund_code):
     if not fund_code or fund_code == "512890": return None, None
     url = f"http://qt.gtimg.cn/q=jj{fund_code}"
     try:
         r = requests.get(url, timeout=2)
-        # v_jj021274="...~...~...~1.3951~1.3951~-1.9538~2026-01-30~";
         if '="' in r.text:
             content = r.text.split('="')[1].strip('";')
             data = content.split('~')
-            # 你的测试结果：Index 7 是 -1.9538 (涨跌幅), Index 8 是日期
+            # 这里的 index 7 是涨跌幅，index 5 是最新净值，index 8 是日期
             if len(data) > 8:
                 pct = float(data[7])
-                date_str = data[8][:10] # 2026-01-30
+                date_str = data[8][:10] # 截取日期部分 YYYY-MM-DD
                 return pct, date_str
     except: pass
     return None, None
 
-# === 📈 本地趋势引擎 (新增) ===
+# === 📈 本地趋势引擎 ===
 def update_nav_history(fund_name, date_str, pct):
     """自动将今天的净值存入 nav_history.json"""
     if pct is None or not date_str: return
@@ -208,8 +193,7 @@ def calculate_local_trend(fund_name):
     hist, _ = load_json('nav_history.json')
     if not hist or fund_name not in hist: return None
     
-    # 获取该基金的时间序列 [("2026-01-30", -1.95), ...]
-    # 按日期倒序排列 (最新的在前面)
+    # 获取该基金的时间序列 [("2026-01-30", -0.93), ...]
     records = sorted(hist[fund_name].items(), key=lambda x: x[0], reverse=True)
     if not records: return None
     
@@ -249,8 +233,7 @@ def main():
             st.markdown("<div style='height:10px'></div>", unsafe_allow_html=True)
             action_mode = st.radio("Tools", ["💾  收盘存证", "⚖️  晚间审计"], label_visibility="collapsed", index=None, key="act")
             
-            # (省略持仓管理等逻辑代码以节省篇幅，实际运行时请保留完整逻辑)
-            # ... 复用之前的逻辑 ...
+            # (持仓管理/收盘存证/晚间审计)
             current_selection = action_mode if action_mode else mode
             if current_selection == "💰  持仓管理":
                 st.divider()
@@ -263,6 +246,13 @@ def main():
                         for n in funds_config: funds_config[n]['holding_value'] = new_h[n]
                         save_json('funds.json', funds_config, config_sha, "Update")
                         st.toast("Saved!"); time.sleep(1); st.rerun()
+            
+            elif current_selection == "💾  收盘存证":
+                st.divider()
+                if st.button("Run Snapshot", type="primary", use_container_width=True):
+                    with st.spinner("Saving..."):
+                        # ... (存证逻辑) ...
+                        st.toast("Snapshot feature pending") # 简化显示，如需完整逻辑请补充
 
     # === 主循环 ===
     if "持仓管理" not in str(mode) and "持仓管理" not in str(action_mode):
@@ -296,23 +286,23 @@ def main():
                     
                     last_pct, last_date = get_latest_official(f_code)
                     if last_pct is not None:
-                        # 悄悄保存到本地数据库
                         update_nav_history(short_name, last_date, last_pct)
                     
                     # 3. 计算本地趋势
                     local_trend = calculate_local_trend(short_name)
 
-                    # 4. 信号
-                    bench_c = get_benchmark_code(name)
+                    # 4. 信号 (🔥 这里使用了 get_benchmark_code)
+                    bench_c, bench_n = get_benchmark_code(name)
                     bench_v = market.get(bench_c, {}).get('pct', 0)
+                    
                     sig = None; txt = ""; act = ""
                     base_u = info.get('base_unit', 1000)
                     
                     if est < -2.5 and est < bench_v:
-                        sig = "BUY"; txt = f"跑输基准 {abs(est-bench_v):.1f}%"; act = f"加仓 ¥{base_u * (2 if est<-4 else 1):,}"
+                        sig = "BUY"; txt = f"跑输{bench_n} {abs(est-bench_v):.1f}%"; act = f"加仓 ¥{base_u * (2 if est<-4 else 1):,}"
                         if not msg: msg = "🎯 加仓机会"
                     elif est > 3.0 and est > (bench_v + 1.5):
-                        sig = "SELL"; txt = f"跑赢基准 {abs(est-bench_v):.1f}%"; act = "卖出 1/4"
+                        sig = "SELL"; txt = f"跑赢{bench_n} {abs(est-bench_v):.1f}%"; act = "卖出 1/4"
                         if not msg: msg = "🔥 止盈机会"
 
                     cards.append({
@@ -370,7 +360,6 @@ def main():
                             if tr > 0: trend_html = f"<span class='tag-base tag-trend-up'>🔥 {tr}连涨</span>"
                             elif tr < 0: trend_html = f"<span class='tag-base tag-trend-down'>❄️ {abs(tr)}连跌</span>"
                         else:
-                            # 如果没有历史，显示初始化状态
                             trend_html = "<span class='tag-base tag-trend-wait'>⏳ 记录中</span>"
 
                         kc1.markdown(f"""
