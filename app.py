@@ -24,7 +24,7 @@ AUDIT_MEMO = {
     }
 }
 
-# 🛠️ 基金代码映射表 (用于抓取昨日净值，请确保名字能匹配)
+# 🛠️ 基金代码映射表
 FUND_CODES_MAP = {
     '摩根均衡': '009968',
     '泰康新锐': '009340',
@@ -86,7 +86,7 @@ st.markdown("""
     /* 审计胶囊 */
     .audit-pill { display: inline-block; padding: 4px 12px; border-radius: 20px; font-size: 12px; font-weight: 500; margin-bottom: 12px; font-family: -apple-system; }
 
-    /* 🔥 新增：昨日涨幅标签样式 */
+    /* 昨日涨幅标签样式 */
     .yesterday-tag { font-size: 11px; color: #999; background: #f0f0f5; padding: 2px 6px; border-radius: 4px; margin-left: 6px; }
     </style>
 """, unsafe_allow_html=True)
@@ -133,7 +133,7 @@ def save_factor_history(date_str, new_factors_dict):
 
 # === 🕷️ 腾讯数据全家桶 (快且稳) ===
 
-# 1. 抓股票实时行情
+# 1. 抓股票实时行情 (统一 Key: 'pct')
 def get_realtime_price(stock_codes):
     if not stock_codes: return {}
     url = f"http://qt.gtimg.cn/q={','.join(stock_codes)}"
@@ -156,13 +156,13 @@ def get_realtime_price(stock_codes):
                         
                         # 简单熔断
                         if abs(pct) > 60: pct = 0.0
-                        price_data[code] = {'name': name, 'change': pct}
+                        # 🔥 重点：这里统一命名为 'pct'，不再叫 'change'
+                        price_data[code] = {'name': name, 'pct': pct}
                 except: continue
         return price_data
     except: return None
 
-# 2. 🔥 新增：抓基金官方净值 (只取昨天最新的) - 腾讯接口
-# 替代了原本的 Eastmoney 接口，解决卡顿问题
+# 2. 抓基金官方净值 (只取昨天最新的) - 腾讯接口
 def get_latest_official(fund_code):
     if not fund_code: return None, None
     url = f"http://web.ifzq.gtimg.cn/appstock/app/fund/nav/get?code=jj{fund_code}"
@@ -243,7 +243,8 @@ def main():
                                 val=0; w=0
                                 for s in i['holdings']:
                                     if s['code'] in prices:
-                                        val += prices[s['code']]['change']*s['weight']; w+=s['weight']
+                                        # 🔥 这里的 key 改为 'pct'
+                                        val += prices[s['code']]['pct']*s['weight']; w+=s['weight']
                                 snap[n] = val/w if w>0 else 0
                             hist, hsha = load_json('history.json')
                             hist[today] = snap
@@ -263,7 +264,7 @@ def main():
                         for idx, (n, i) in enumerate(funds_config.items()):
                             if n in audited: bar.progress((idx+1)/len(funds_config)); continue
                             
-                            # 获取昨日官方数据 (使用腾讯接口，更稳)
+                            # 获取昨日官方数据 (使用腾讯接口)
                             f_code = None
                             short_name = n.split('(')[0]
                             for k_map, v_map in FUND_CODES_MAP.items():
@@ -309,14 +310,15 @@ def main():
                     for s in info['holdings']:
                         d = market.get(s['code'])
                         if d:
-                            val += d['change']*s['weight']; w += s['weight']
+                            # 🔥 所有的计算都用 'pct'
+                            val += d['pct']*s['weight']; w += s['weight']
                             if len(stocks)<3: stocks.append(d)
                     
                     est = (val/w * info.get('factor', 1.0)) if w>0 else 0
                     profit = info.get('holding_value', 0) * est / 100
                     total_p += profit; total_base += info.get('holding_value', 0)
 
-                    # 2. 🔥 获取昨日官方净值 (用于对比)
+                    # 2. 获取昨日官方净值 (用于对比)
                     short_name = name.split('(')[0]
                     f_code = None
                     for k_map, v_map in FUND_CODES_MAP.items():
@@ -327,7 +329,8 @@ def main():
 
                     # 3. 信号判断
                     bench_code, bench_name = get_benchmark_code(name)
-                    bench_val = market.get(bench_code, {}).get('change', 0)
+                    # 🔥 基准也用 'pct'
+                    bench_val = market.get(bench_code, {}).get('pct', 0)
                     
                     sig_type = None; sig_desc = ""; act_adv = ""
                     base_u = info.get('base_unit', 1000)
@@ -388,7 +391,7 @@ def main():
                         prof_s = "<span style='color:#aaa'>****</span>" if zen_mode else f"￥{card['profit']:+.1f}"
                         prin_s = "****" if zen_mode else f"￥{card['principal']:,}"
 
-                        # 🔥 昨日对比显示
+                        # 昨日对比显示
                         last_html = ""
                         if card['last_pct'] is not None:
                             l_col = "#ff3b30" if card['last_pct']>0 else "#34c759"
@@ -407,6 +410,7 @@ def main():
 
                         rows = ""
                         for i, s in enumerate(card['stocks']):
+                            # 🔥 这里也必须用 'pct'
                             bg = "#ff3b30" if s['pct']>0 else ("#34c759" if s['pct']<0 else "#8e8e93")
                             rows += f"<div class='ios-row'><div class='ios-index'>{i+1}</div><div class='ios-name'>{s['name']}</div><div class='ios-pill' style='background-color:{bg}'>{s['pct']:+.2f}%</div></div>"
                         kc2.markdown(f"<div class='ios-list-container'>{rows}</div>", unsafe_allow_html=True)
@@ -416,7 +420,8 @@ def main():
                 mc1, mc2, mc3 = st.columns(3)
                 for i, (k, v) in enumerate(MARKET_INDICES.items()):
                     d = market.get(k)
-                    if d: [mc1, mc2, mc3][i].metric(v, f"{d['change']:.2f}%")
+                    # 🔥 底部大盘也用 'pct'
+                    if d: [mc1, mc2, mc3][i].metric(v, f"{d['pct']:.2f}%")
 
             time.sleep(30)
 
