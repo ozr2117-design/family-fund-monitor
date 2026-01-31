@@ -4,6 +4,7 @@ import time
 import json
 import pandas as pd
 import re
+import os
 from datetime import datetime, timedelta
 from github import Github
 
@@ -42,6 +43,7 @@ st.set_page_config(
 
 st.markdown("""
     <style>
+    /* 全局背景 */
     .stApp {
         background: radial-gradient(circle at 10% 20%, rgba(255, 230, 240, 0.4) 0%, rgba(255, 255, 255, 0) 40%),
                     radial-gradient(circle at 90% 80%, rgba(230, 240, 255, 0.4) 0%, rgba(255, 255, 255, 0) 40%),
@@ -54,16 +56,19 @@ st.markdown("""
     footer {visibility: hidden;}
     header {visibility: hidden;}
     
+    /* 按钮优化 */
     div[data-testid="stPopover"] > button {
         border-radius: 20px; background: rgba(255,255,255,0.8); border: 1px solid #eee; color: #555;
     }
     
-    /* 强制等高卡片 */
+    /* 🔥 强制等高卡片 */
     div[data-testid="stMetric"] {
         background: rgba(255, 255, 255, 0.65); backdrop-filter: blur(16px);
         border: 1px solid rgba(255, 255, 255, 0.6); border-radius: 20px; padding: 15px 20px;
         box-shadow: 0 8px 32px rgba(31, 38, 135, 0.05);
-        min-height: 120px !important; max-height: 120px !important;
+        /* 固定高度 */
+        min-height: 120px !important; 
+        max-height: 120px !important;
         display: flex; flex-direction: column; justify-content: center;
     }
     
@@ -85,6 +90,7 @@ st.markdown("""
     .signal-sell { background-color: #fff2f0; border: 1px solid #ffccc7; color: #cf1322; padding: 10px 14px; border-radius: 10px; font-size: 13px; font-weight: 600; margin-bottom: 15px; display: flex; align-items: center; }
     .audit-pill { display: inline-block; padding: 4px 12px; border-radius: 20px; font-size: 12px; font-weight: 500; margin-bottom: 12px; font-family: -apple-system; }
 
+    /* 🏷️ 标签样式组 */
     .tag-base { font-size: 11px; padding: 2px 6px; border-radius: 4px; margin-left: 6px; font-weight: 500; }
     .tag-yesterday { color: #888; background: #f0f0f5; }
     .tag-trend-up { color: #cf1322; background: #fff1f0; border: 1px solid #ffa39e; }
@@ -174,6 +180,7 @@ def get_latest_official(fund_code):
 
 # === 🏴‍☠️ 历史数据灌入 ===
 def fetch_history_from_eastmoney(fund_code):
+    """从静态文件获取全量历史"""
     url = f"http://fund.eastmoney.com/pingzhongdata/{fund_code}.js"
     headers = {"User-Agent": "Mozilla/5.0", "Referer": "http://fund.eastmoney.com/"}
     try:
@@ -199,24 +206,26 @@ def init_history_data(funds_config):
     updated = False
     for name in funds_config.keys():
         short_name = name.split('(')[0].strip()
+        
+        # 智能匹配 (仅限 Config 中的基金)
         f_code = None
         for k, v in FUND_CODES_MAP.items():
             if k in short_name or short_name in k:
                 f_code = v; break
         
-        if not f_code: continue
+        if not f_code: continue 
         
-        # 🔥 修正策略：总是尝试获取历史数据并覆盖，确保脏数据被清洗
-        with st.spinner(f"正在校准 {short_name} 的历史数据..."):
+        # 🔥 强力校准：每次启动都拉取并【覆盖】最近的数据，清洗脏数据
+        with st.spinner(f"正在校准 {short_name} 数据..."):
             full_data = fetch_history_from_eastmoney(f_code)
             if full_data:
                 if short_name not in hist: hist[short_name] = {}
-                # 覆盖更新 (update 会覆盖 key 相同的旧数据)
+                # 直接更新整个 Map，确保旧的错误数据被覆盖
                 hist[short_name].update(full_data)
                 updated = True
     
     if updated:
-        save_json('nav_history.json', hist, sha, "Auto Correct History")
+        save_json('nav_history.json', hist, sha, "Auto Correct History V7.5")
         return hist
     return hist
 
@@ -243,6 +252,7 @@ def main():
     funds_config, config_sha = load_json('funds.json')
     if not funds_config: st.stop()
 
+    # 初始化 & 强力清洗数据
     if 'history_checked' not in st.session_state:
         nav_hist = init_history_data(funds_config)
         st.session_state['nav_hist'] = nav_hist
@@ -292,7 +302,7 @@ def main():
                     with st.spinner("Saving..."):
                         st.toast("Snapshot feature pending") 
 
-    # === 主循环 ===
+    # === 主看板逻辑 ===
     if "持仓管理" not in str(mode) and "持仓管理" not in str(action_mode):
         placeholder = st.empty()
         all_codes = list(MARKET_INDICES.keys())
@@ -308,6 +318,7 @@ def main():
                 nav_hist_updated = False
                 
                 for name, info in funds_config.items():
+                    # 1. 估值
                     val=0; w=0; stocks=[]
                     for s in info['holdings']:
                         d = market.get(s['code'])
@@ -318,6 +329,7 @@ def main():
                     profit = info.get('holding_value', 0) * est / 100
                     total_p += profit; total_b += info.get('holding_value', 0)
 
+                    # 2. 官方净值更新 (内存 + 缓存)
                     short_name = name.split('(')[0].strip()
                     f_code = None
                     for k, v in FUND_CODES_MAP.items():
@@ -326,16 +338,16 @@ def main():
                     
                     last_pct, last_date = get_latest_official(f_code)
                     
-                    # 🔥 修正：不仅是添加，还要允许更新旧数据
                     if last_pct is not None and nav_hist:
                         if short_name not in nav_hist: nav_hist[short_name] = {}
-                        # 总是更新为最新的官方值 (修复脏数据)
+                        # 总是更新为最新的官方值
                         if last_date not in nav_hist[short_name] or nav_hist[short_name][last_date] != last_pct:
                             nav_hist[short_name][last_date] = last_pct
                             nav_hist_updated = True
                     
                     local_trend = calculate_local_trend(nav_hist, short_name)
 
+                    # 3. 信号
                     bench_c, bench_n = get_benchmark_code(name)
                     bench_v = market.get(bench_c, {}).get('pct', 0)
                     sig = None; txt = ""; act = ""
@@ -402,7 +414,7 @@ def main():
                             elif tr < 0: trend_html = f"<span class='tag-base tag-trend-down'>❄️ {abs(tr)}连跌</span>"
                             else: trend_html = "<span class='tag-base tag-trend-wait'>〰️ 0连涨</span>"
                         
-                        # 单行HTML拼接，修复Markdown渲染Bug
+                        # 🔥 修复：使用单行字符串拼接 HTML，彻底解决缩进导致的乱码问题
                         hist_row_html = ""
                         if last_html or trend_html:
                             hist_row_html = f"<div style='margin-top:8px; display:flex; align-items:center'><span style='font-size:11px; color:#aaa'>历史</span>{last_html}{trend_html}</div>"
