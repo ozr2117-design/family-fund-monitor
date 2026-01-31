@@ -1,14 +1,13 @@
 import streamlit as st
 import json
 import requests
-import pandas as pd
 from datetime import datetime
 import pytz
 
 # ==========================================
 # 1. 核心配置与人工审计日志 (Manual Audit Log)
 # ==========================================
-# 这里就是你要求的“上周偏离提示”，直接写在这里方便随时改
+# 这里是你要求的“上周偏离提示”，直接写在这里方便随时改
 AUDIT_MEMO = {
     "摩根均衡": {
         "tag": "⚠️ 偏离较高", 
@@ -53,7 +52,7 @@ st.markdown("""
         border: 1px solid rgba(255,255,255,0.6);
     }
     
-    /* 审计胶囊样式 (新增) */
+    /* 审计胶囊样式 */
     .audit-pill {
         display: inline-block;
         padding: 4px 12px;
@@ -65,7 +64,7 @@ st.markdown("""
     }
 
     /* 文字颜色强制深色 */
-    h1, h2, h3, p, span, div {
+    h1, h2, h3, p, span, div, strong {
         color: #333333 !important;
     }
     
@@ -86,6 +85,7 @@ def get_realtime_price(stock_codes):
     if not stock_codes:
         return {}
     
+    # 腾讯财经接口支持批量查询
     url = f"http://qt.gtimg.cn/q={','.join(stock_codes)}"
     try:
         r = requests.get(url, timeout=3)
@@ -93,15 +93,20 @@ def get_realtime_price(stock_codes):
             return {}
         
         data_map = {}
+        # 腾讯返回的数据以分号分隔
         lines = r.text.split(';')
         for line in lines:
             if '="' in line:
+                # 解析代码: v_s_sz000001="51~..."
                 code = line.split('=')[0].split('_')[-1]
                 params = line.split('="')[1].split('~')
+                
+                # 确保数据长度足够（避免停牌或异常数据）
                 if len(params) > 30:
                     current_price = float(params[3])
                     last_close = float(params[4])
                     pct_change = float(params[32])
+                    
                     data_map[code] = {
                         'price': current_price,
                         'last_close': last_close,
@@ -132,7 +137,7 @@ def calculate_fund_estimate(fund_info, market_data):
             total_weight += weight
             
     if total_weight > 0:
-        # 归一化处理：假设前十大持仓代表整体
+        # 归一化处理：假设前十大持仓代表整体趋势
         estimated_change = (total_weighted_change / total_weight) * factor
         return estimated_change
     return 0.0
@@ -187,33 +192,31 @@ def main():
             sign = ""
             
         # ----------------------------------
-        # 🔥 新增功能：查找并显示人工审计提示
+        # 查找并显示人工审计提示 (Audit Memo)
         # ----------------------------------
         audit_html = ""
         # 模糊匹配：只要配置里的名字包含在基金名里，就显示提示
         for key, memo in AUDIT_MEMO.items():
             if key in fund_name:
-                audit_html = f"""
-                <div class="audit-pill" style="background-color: {memo['color']}; color: {memo['text_color']};">
-                    <strong>{memo['tag']}</strong> | {memo['text']}
-                </div>
-                """
+                # 注意：这里写成单行，防止 Markdown 缩进错误
+                audit_html = f'<div class="audit-pill" style="background-color: {memo["color"]}; color: {memo["text_color"]};"><strong>{memo["tag"]}</strong> | {memo["text"]}</div>'
                 break
         
         # 渲染卡片 HTML
+        # 注意：下面的 HTML 标签是顶格写的（没有缩进），这是为了防止 Markdown 把它识别为代码块
         st.markdown(f"""
-        <div class="fund-card">
-            <div style="display:flex; justify-content:space-between; align-items:center;">
-                <h3 style="margin:0; font-size:1.2rem;">{fund_name}</h3>
-                <span class="{color_class}" style="font-size:1.5rem;">{sign}{est_change:.2f}%</span>
-            </div>
-            {audit_html}
-            <div style="margin-top:10px; font-size:0.9rem; color:#666;">
-                系数: {fund_info.get('factor', 1.0):.2f} | 
-                底仓: {fund_info.get('base_unit', 0)}
-            </div>
-        </div>
-        """, unsafe_allow_html=True)
+<div class="fund-card">
+<div style="display:flex; justify-content:space-between; align-items:center;">
+<h3 style="margin:0; font-size:1.2rem;">{fund_name}</h3>
+<span class="{color_class}" style="font-size:1.5rem;">{sign}{est_change:.2f}%</span>
+</div>
+{audit_html}
+<div style="margin-top:10px; font-size:0.9rem; color:#666;">
+系数: {fund_info.get('factor', 1.0):.2f} | 
+底仓: {fund_info.get('base_unit', 0)}
+</div>
+</div>
+""", unsafe_allow_html=True)
         
     # 底部刷新按钮
     if st.button('🔄 刷新数据'):
