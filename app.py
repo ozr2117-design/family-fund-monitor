@@ -31,7 +31,7 @@ AUDIT_MEMO = {
 st.set_page_config(page_title="Family Wealth V5.1", page_icon="📈", layout="centered")
 
 # ==========================================
-# 2. 极光样式 CSS (强制日间模式)
+# 2. 极光样式 CSS
 # ==========================================
 st.markdown("""
 <style>
@@ -105,7 +105,7 @@ def calculate_fund_estimate(fund_info, market_data):
     return 0.0
 
 # ==========================================
-# 4. 主程序逻辑
+# 4. 主程序逻辑 (核心修复)
 # ==========================================
 def main():
     tz = pytz.timezone('Asia/Shanghai')
@@ -130,10 +130,11 @@ def main():
         st.warning("等待开盘...")
         return
 
+    # 渲染循环
     for fund_name, fund_info in funds_config.items():
         est_change = calculate_fund_estimate(fund_info, market_data)
         
-        # 颜色判断
+        # 1. 确定颜色样式
         if est_change > 0:
             color_class = "trend-up"
             sign = "+"
@@ -144,26 +145,34 @@ def main():
             color_class = "trend-flat"
             sign = ""
             
-        # 生成审计提示 HTML (完全去缩进)
-        audit_html = ""
+        # 2. 生成审计提示 HTML
+        audit_div = "" 
         for key, memo in AUDIT_MEMO.items():
             if key in fund_name:
-                audit_html = f'<div class="audit-pill" style="background-color: {memo["color"]}; color: {memo["text_color"]};"><strong>{memo["tag"]}</strong> | {memo["text"]}</div>'
+                # 这种写法绝对安全，没有换行符
+                audit_div = f'<div class="audit-pill" style="background-color: {memo["color"]}; color: {memo["text_color"]};"><strong>{memo["tag"]}</strong> | {memo["text"]}</div>'
                 break
         
-        # ⚠️ 关键修正：HTML 字符串完全左对齐，不留任何前导空格
-        card_html = f"""<div class="fund-card">
-<div style="display:flex; justify-content:space-between; align-items:center;">
-<h3 style="margin:0; font-size:1.2rem;">{fund_name}</h3>
-<span class="{color_class}" style="font-size:1.5rem;">{sign}{est_change:.2f}%</span>
-</div>
-{audit_html}
-<div style="margin-top:10px; font-size:0.9rem; color:#666;">
-系数: {fund_info.get('factor', 1.0):.2f} | 底仓: {fund_info.get('base_unit', 0)}
-</div>
-</div>"""
+        # 3. 【防弹拼接】使用列表 append，彻底杜绝缩进干扰
+        html_parts = []
+        html_parts.append(f'<div class="fund-card">')
+        html_parts.append(f'<div style="display:flex; justify-content:space-between; align-items:center;">')
+        html_parts.append(f'<h3 style="margin:0; font-size:1.2rem;">{fund_name}</h3>')
+        html_parts.append(f'<span class="{color_class}" style="font-size:1.5rem;">{sign}{est_change:.2f}%</span>')
+        html_parts.append(f'</div>')
         
-        st.markdown(card_html, unsafe_allow_html=True)
+        if audit_div:
+            html_parts.append(audit_div)
+            
+        html_parts.append(f'<div style="margin-top:10px; font-size:0.9rem; color:#666;">')
+        html_parts.append(f'系数: {fund_info.get("factor", 1.0):.2f} | 底仓: {fund_info.get("base_unit", 0)}')
+        html_parts.append(f'</div>')
+        html_parts.append(f'</div>')
+        
+        # 4. 合并成一行，不带任何空格或换行
+        final_html = "".join(html_parts)
+        
+        st.markdown(final_html, unsafe_allow_html=True)
         
     if st.button('🔄 刷新数据'):
         st.rerun()
