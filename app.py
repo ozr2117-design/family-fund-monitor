@@ -24,12 +24,12 @@ AUDIT_MEMO = {
     }
 }
 
-# 🛠️ 基金代码映射表 (确保这里代码正确)
+# 🛠️ 基金代码映射表 (已更新为你提供的 C 类代码)
 FUND_CODES_MAP = {
-    '摩根均衡': '009968',
-    '泰康新锐': '009340',
-    '财通优选': '009354',
-    '红利低波': '512890' 
+    '摩根均衡': '021274',  # 摩根均衡精选混合C
+    '泰康新锐': '017366',  # 泰康新锐成长混合C
+    '财通优选': '021528',  # 财通成长优选混合C
+    '红利低波': '512890'   # ETF保持不变
 }
 
 # === 🎨 1. 页面配置与 CSS ===
@@ -148,7 +148,6 @@ def get_realtime_price(stock_codes):
                     data = part.split('="')[1].strip('"').split('~')
                     if len(data) > 30:
                         name = data[1].replace(" ", "")
-                        # 优先取 Index 32 (涨跌幅), 如果没有则计算
                         pct = float(data[32]) if len(data) > 32 and data[32] != '' else 0.0
                         if pct == 0.0: 
                             current = float(data[3]); close = float(data[4])
@@ -161,7 +160,7 @@ def get_realtime_price(stock_codes):
         return price_data
     except: return None
 
-# 2. 🔥 修正：精准解析腾讯 JJ 接口数据 (Index 7)
+# 2. 抓基金官方净值 (基于 Debug 结果优化)
 def get_latest_official(fund_code):
     if not fund_code: return None
     
@@ -177,10 +176,9 @@ def get_latest_official(fund_code):
             content = r.text.split('="')[1].strip('";')
             data = content.split('~')
             
-            # 根据你的 Debug 结果，第 7 位 (Index 7) 是涨跌幅，第 8 位 (Index 8) 是日期
+            # Index 7 是涨跌幅
             if len(data) > 8:
-                pct = float(data[7]) # 直接取第7位
-                # date_str = data[8] # 需要日期的话可以取第8位
+                pct = float(data[7]) 
                 return pct
     except: pass
     return None
@@ -372,22 +370,25 @@ def main():
                     elif card['sig_type']=="SELL": suffix += " 🔥 止盈"
                     
                     with st.expander(f"{icon} {card['name']}{suffix}"):
+                        # 审计胶囊
                         for k, v in AUDIT_MEMO.items():
                             if k in card['full_name']:
                                 st.markdown(f"<div class='audit-pill' style='background-color:{v['color']}; color:{v['text_color']};'><strong>{v['tag']}</strong> | {v['text']}</div>", unsafe_allow_html=True)
                                 break
                         
+                        # 信号
                         if card['sig_type']:
                             cls = "signal-buy" if card['sig_type']=="BUY" else "signal-sell"
                             icon_s = "🎯" if card['sig_type']=="BUY" else "🔥"
                             st.markdown(f"<div class='{cls}'><div><div>{icon_s} {card['sig_desc']}</div><div style='font-size:15px; margin-top:4px'>👉 {card['act_adv']}</div></div></div>", unsafe_allow_html=True)
 
+                        # 详情数据区
                         kc1, kc2 = st.columns([1.1, 2])
                         col_c = "#ff3b30" if card['profit']>0 else "#34c759"
                         prof_s = "<span style='color:#aaa'>****</span>" if zen_mode else f"￥{card['profit']:+.1f}"
                         prin_s = "****" if zen_mode else f"￥{card['principal']:,}"
 
-                        # 🔥 昨日对比显示 (根据 Debug 修复)
+                        # 昨日对比显示 (根据 Debug 修复)
                         last_html = ""
                         if card['last_pct'] is not None:
                             # 颜色判断：涨红跌绿
