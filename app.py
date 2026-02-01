@@ -619,7 +619,8 @@ def main():
                         total_actual_profit += info.get('holding_value', 0) * pct / 100
 
                 # 布局：4列 (预估额 | 实际额 | 预估率 | 实际率)
-                m_col1, m_col2, m_col3, m_col4 = st.columns([1.3, 1.3, 0.9, 0.9])
+                # 调整比例，给收益率多一点空间，防止截断
+                m_col1, m_col2, m_col3, m_col4 = st.columns([1.1, 1.1, 1, 1])
                 
                 # A. 今日预估收益
                 if zen_mode:
@@ -635,7 +636,8 @@ def main():
                     if actual_data_ready:
                         m_col2.metric("今日实际收益", f"{total_actual_profit:+.2f}", delta=f"{total_actual_profit-total_profit:+.0f} 差额")
                     else:
-                        m_col2.metric("今日实际收益", "💎 Pending")
+                        # 仅显示钻石，去掉 Pending
+                        m_col2.metric("今日实际收益", "💎")
 
                 # C. 预估收益率
                 est_yield_rate = (total_profit/total_principal*100) if total_principal > 0 else 0
@@ -646,7 +648,8 @@ def main():
                     act_yield_rate = (total_actual_profit/total_principal*100) if total_principal > 0 else 0
                     m_col4.metric("实际收益率", f"{act_yield_rate:+.2f}%")
                 else:
-                    m_col4.metric("今日实际收益率", "💎")
+                    # 缩短标题，防止截断
+                    m_col4.metric("实际收益率", "💎")
                 
                 # 2. 💎 持仓列表
                 st.markdown("<div style='margin-bottom: 12px;'></div>", unsafe_allow_html=True)
