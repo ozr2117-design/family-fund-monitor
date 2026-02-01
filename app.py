@@ -310,30 +310,32 @@ def update_history_cache(funds_config):
         code = FUND_CODES_MAP.get(name)
         if not code: continue
         
-        short_name = name.split('(')[0]
-        if short_name not in cache: cache[short_name] = {}
+        # 使用全名作为 Key，避免分割带来的混淆
+        key_name = name
+        if key_name not in cache: cache[key_name] = {}
         
-        fund_history = cache[short_name]
+        fund_history = cache[key_name]
         
         # 简单策略：如果最新数据的日期早于今天，就尝试更新
         sorted_dates = sorted(fund_history.keys())
         last_date = sorted_dates[-1] if sorted_dates else "2000-01-01"
         
-        # 只要最新日期不是今天（考虑到基金净值更新晚，这里主要是确保有最近的数据）
-        # 如果今天是周六日，可能也不会更新，但多抓一次无妨
         if last_date < today:
             data = fetch_fund_history(code)
             if data:
                 count_new = 0
                 for item in data:
                     d = item["FSRQ"]
-                    # 接口返回的是百分数文本，如 "1.23"
                     try:
                         val = float(item["JZZZL"]) if item["JZZZL"] else 0.0
                         if d not in fund_history:
                             fund_history[d] = val
                             count_new += 1
                             need_save = True
+                    except: pass
+                if count_new > 0:
+                    try:
+                        st.toast(f"已更新: {name.split('(')[0]} ({count_new}条)")
                     except: pass
                 
     if need_save:
@@ -343,12 +345,12 @@ def update_history_cache(funds_config):
 
 def get_dashboard_stats(fund_name, cache):
     """计算昨日收益和连涨连跌趋势"""
-    short_name = fund_name.split('(')[0]
+    key_name = fund_name
     stats = {"yesterday": 0, "streak": 0, "streak_type": "none", "last_date": "-"}
     
-    if short_name not in cache: return stats
+    if key_name not in cache: return stats
     
-    history = cache[short_name]
+    history = cache[key_name]
     if not history: return stats
     
     # 按日期倒序
