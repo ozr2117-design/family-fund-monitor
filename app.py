@@ -554,7 +554,7 @@ def main():
                     total_profit += profit
                     total_principal += principal
                     
-                    # 📈 历史统计
+                    # 📈 历史统计 & 实际收益计算
                     h_stats = get_dashboard_stats(name, nav_cache)
                     yes_profit = principal * h_stats['yesterday'] / 100
                     
@@ -600,17 +600,53 @@ def main():
                 # Toast
                 if signal_msg: st.toast(signal_msg)
 
-                # 1. 💰 总盈亏 (禅模式屏蔽逻辑)
+                # 1. 💰 核心收益看板 (改版：预估 vs 实际)
                 st.markdown("<br>", unsafe_allow_html=True)
-                main_col1, main_col2 = st.columns([1.8, 1])
                 
+                # 计算今日实际收益 (基于 nav_cache)
+                today_str = bj_time.strftime("%Y-%m-%d")
+                total_actual_profit = 0
+                actual_data_ready = True # 假设数据已准备好，除非发现缺失
+                
+                for name, info in funds_config.items():
+                    # 检查缓存里是否有今天的日期
+                    key_name = name
+                    if key_name not in nav_cache or today_str not in nav_cache[key_name]:
+                        actual_data_ready = False
+                        break
+                    else:
+                        pct = nav_cache[key_name][today_str]
+                        total_actual_profit += info.get('holding_value', 0) * pct / 100
+
+                # 布局：4列 (预估额 | 实际额 | 预估率 | 实际率)
+                m_col1, m_col2, m_col3, m_col4 = st.columns([1.3, 1.3, 0.9, 0.9])
+                
+                # A. 今日预估收益
                 if zen_mode:
-                    main_col1.metric("今日家庭收益 (元)", "****", delta=None)
+                    m_col1.metric("今日预估收益", "****")
                 else:
-                    main_col1.metric("今日家庭收益 (元)", f"{total_profit:+.2f}", delta=f"{total_profit:+.2f}")
-                
-                yield_rate = (total_profit/total_principal*100) if total_principal > 0 else 0
-                main_col2.metric("收益率", f"{yield_rate:+.2f}%", delta_color="normal")
+                    # 需求：去掉下方的绿色涨跌数值，只保留大数字
+                    m_col1.metric("今日预估收益", f"{total_profit:+.2f}")
+
+                # B. 今日实际收益
+                if zen_mode:
+                     m_col2.metric("今日实际收益", "****")
+                else:
+                    if actual_data_ready:
+                        m_col2.metric("今日实际收益", f"{total_actual_profit:+.2f}", delta=f"{total_actual_profit-total_profit:+.0f} 差额")
+                    else:
+                        m_col2.metric("今日实际收益", "💎 Pending")
+
+                # C. 预估收益率
+                est_yield_rate = (total_profit/total_principal*100) if total_principal > 0 else 0
+                m_col3.metric("预估收益率", f"{est_yield_rate:+.2f}%")
+
+                # D. 实际收益率
+                if actual_data_ready:
+                    act_yield_rate = (total_actual_profit/total_principal*100) if total_principal > 0 else 0
+                    m_col4.metric("实际收益率", f"{act_yield_rate:+.2f}%")
+                else:
+                    m_col4.metric("今日实际收益率", "💎")
                 
                 # 2. 💎 持仓列表
                 st.markdown("<div style='margin-bottom: 12px;'></div>", unsafe_allow_html=True)
