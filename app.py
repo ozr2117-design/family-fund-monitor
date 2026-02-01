@@ -279,10 +279,120 @@ def get_official_nav(fund_code):
     except: pass
     return None, None
 
+# === 📈 历史数据与趋势分析 (Auto-Fetch) ===
+
+def fetch_fund_history(fund_code, limit=20):
+    """从天天基金接口抓取历史净值"""
+    timestamp = int(time.time() * 1000)
+    url = f"https://api.fund.eastmoney.com/f10/lsjz?fundCode={fund_code}&pageIndex=1&pageSize={limit}&_={timestamp}"
+    headers = {
+        "Referer": "http://fund.eastmoney.com/",
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+    }
+    try:
+        r = requests.get(url, headers=headers, timeout=5)
+        if r.status_code == 200:
+            res = r.json()
+            if "Data" in res and "LSJZList" in res["Data"]:
+                return res["Data"]["LSJZList"]
+    except: pass
+    return []
+
+def update_history_cache(funds_config):
+    """检查并更新历史净值缓存"""
+    cache, sha = load_json('nav_history.json')
+    if not isinstance(cache, dict): cache = {}
+    
+    need_save = False
+    today = datetime.now().strftime("%Y-%m-%d")
+    
+    for name, info in funds_config.items():
+        code = FUND_CODES_MAP.get(name)
+        if not code: continue
+        
+        short_name = name.split('(')[0]
+        if short_name not in cache: cache[short_name] = {}
+        
+        fund_history = cache[short_name]
+        
+        # 简单策略：如果最新数据的日期早于今天，就尝试更新
+        sorted_dates = sorted(fund_history.keys())
+        last_date = sorted_dates[-1] if sorted_dates else "2000-01-01"
+        
+        # 只要最新日期不是今天（考虑到基金净值更新晚，这里主要是确保有最近的数据）
+        # 如果今天是周六日，可能也不会更新，但多抓一次无妨
+        if last_date < today:
+            data = fetch_fund_history(code)
+            if data:
+                count_new = 0
+                for item in data:
+                    d = item["FSRQ"]
+                    # 接口返回的是百分数文本，如 "1.23"
+                    try:
+                        val = float(item["JZZZL"]) if item["JZZZL"] else 0.0
+                        if d not in fund_history:
+                            fund_history[d] = val
+                            count_new += 1
+                            need_save = True
+                    except: pass
+                
+    if need_save:
+        save_json('nav_history.json', cache, sha, f"Auto Update {today}")
+    
+    return cache
+
+def get_dashboard_stats(fund_name, cache):
+    """计算昨日收益和连涨连跌趋势"""
+    short_name = fund_name.split('(')[0]
+    stats = {"yesterday": 0, "streak": 0, "streak_type": "none", "last_date": "-"}
+    
+    if short_name not in cache: return stats
+    
+    history = cache[short_name]
+    if not history: return stats
+    
+    # 按日期倒序
+    dates = sorted(history.keys(), reverse=True)
+    if not dates: return stats
+    
+    # 1. 昨日（最新）数据
+    last_date = dates[0]
+    stats["yesterday"] = history[last_date]
+    stats["last_date"] = last_date[5:] # 只显示 MM-DD
+    
+    # 2. 连涨连跌计算
+    if len(dates) < 2: return stats
+    
+    first_val = history[dates[0]]
+    if first_val > 0:
+        streak_type = "up"
+    elif first_val < 0:
+        streak_type = "down"
+    else:
+        streak_type = "flat"
+        
+    count = 1
+    for d in dates[1:]:
+        val = history[d]
+        # 容错：0% 视为中断，或者延续？通常视为中断
+        if (streak_type == "up" and val > 0) or \
+           (streak_type == "down" and val < 0):
+            count += 1
+        else:
+            break
+            
+    stats["streak"] = count
+    stats["streak_type"] = streak_type
+    
+    return stats
+
 # === 🚀 主程序 ===
 def main():
     funds_config, config_sha = load_json('funds.json')
     if not funds_config: st.stop()
+
+    # 🔥 自动更新历史数据
+    nav_cache = update_history_cache(funds_config)
 
     # ==========================================
     # 🌟 顶部导航栏
@@ -442,6 +552,10 @@ def main():
                     total_profit += profit
                     total_principal += principal
                     
+                    # 📈 历史统计
+                    h_stats = get_dashboard_stats(name, nav_cache)
+                    yes_profit = principal * h_stats['yesterday'] / 100
+                    
                     # 信号逻辑
                     bench_code, bench_name = get_benchmark_code(name)
                     bench_val = 0
@@ -525,6 +639,39 @@ def main():
                         
                         if pill_html:
                             st.markdown(pill_html, unsafe_allow_html=True)
+                        
+                        # ----------------------------------------------------
+                        # 📊 历史数据看板 (NEW)
+                        # ----------------------------------------------------
+                        if h_stats['last_date'] != "-":
+                            col_h1, col_h2 = st.columns(2)
+                            
+                            # 昨日盈亏
+                            y_color = "#d93025" if h_stats['yesterday'] > 0 else "#1e8e3e"
+                            y_sign = "+" if h_stats['yesterday'] > 0 else ""
+                            col_h1.markdown(f"""
+                            <div style='background:rgba(255,255,255,0.4); border-radius:8px; padding:8px 12px;'>
+                                <div style='font-size:11px; color:#666'>昨日 ({h_stats['last_date']})</div>
+                                <div style='font-size:14px; font-weight:600; color:{y_color}'>{y_sign}¥{yes_profit:,.1f}</div>
+                                <div style='font-size:10px; color:#999'>{y_sign}{h_stats['yesterday']}%</div>
+                            </div>
+                            """, unsafe_allow_html=True)
+                            
+                            # 连涨连跌
+                            s_icon = "🔥" if h_stats['streak_type'] == "up" else "🥶" if h_stats['streak_type'] == "down" else "😐"
+                            s_text = f"{h_stats['streak']}连涨" if h_stats['streak_type'] == "up" else f"{h_stats['streak']}连跌" if h_stats['streak_type'] == "down" else "平盘"
+                            s_bg = "#fff2f0" if h_stats['streak_type'] == "up" else "#f6ffed" if h_stats['streak_type'] == "down" else "#f5f5f5"
+                            s_color = "#cf1322" if h_stats['streak_type'] == "up" else "#389e0d" if h_stats['streak_type'] == "down" else "#666"
+                            
+                            col_h2.markdown(f"""
+                            <div style='background:{s_bg}; border-radius:8px; padding:8px 12px; height:100%; display:flex; align-items:center;'>
+                                <div style='font-size:13px; font-weight:600; color:{s_color}'>
+                                    {s_icon} {s_text}
+                                </div>
+                            </div>
+                            """, unsafe_allow_html=True)
+                        
+                        st.markdown("<div style='height:10px'></div>", unsafe_allow_html=True)
                         # ----------------------------------------------------
 
                         # 信号区域 (不受禅模式影响，必须清晰)
