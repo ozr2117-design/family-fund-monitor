@@ -592,7 +592,9 @@ def main():
                         "stocks": stocks,
                         "signal_type": signal_type,
                         "signal_desc": signal_desc,
-                        "action_advice": action_advice
+                        "action_advice": action_advice,
+                        "h_stats": h_stats,
+                        "yes_profit": yes_profit
                     })
                 
                 # Toast
@@ -645,6 +647,9 @@ def main():
                         # ----------------------------------------------------
                         # 📊 历史数据看板 (NEW)
                         # ----------------------------------------------------
+                        h_stats = card['h_stats']
+                        yes_profit = card['yes_profit']
+                        
                         if h_stats['last_date'] != "-":
                             col_h1, col_h2 = st.columns(2)
                             
